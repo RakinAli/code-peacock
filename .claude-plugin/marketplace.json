@@ -1,0 +1,19 @@
+{
+  "name": "code-peacock",
+  "description": "Marketplace for the code-peacock autonomous review pipeline",
+  "owner": {
+    "name": "Rakin Ali",
+    "email": "rakin@vetnio.com"
+  },
+  "plugins": [
+    {
+      "name": "code-peacock",
+      "description": "Autonomous review pipeline: senior-dev code review, generated tests, ruthless clean-code lint, headless-browser UI/UX audit with screenshots and videos, an HTML report, and a human-sounding PR.",
+      "author": {
+        "name": "Rakin Ali"
+      },
+      "category": "development",
+      "source": "./"
+    }
+  ]
+}

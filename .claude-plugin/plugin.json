@@ -1,0 +1,12 @@
+{
+  "name": "code-peacock",
+  "description": "Autonomous review pipeline: senior-dev code review, generated tests, ruthless clean-code lint, headless-browser UI/UX audit with screenshots and videos, an HTML report, and a human-sounding PR. Run /peacock and walk away.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Rakin Ali",
+    "email": "rakin@vetnio.com"
+  },
+  "homepage": "https://github.com/RakinAli/code-peacock",
+  "license": "MIT",
+  "keywords": ["code-review", "ui-review", "ux", "playwright", "testing", "lint", "pipeline"]
+}
