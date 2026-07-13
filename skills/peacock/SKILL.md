@@ -283,13 +283,20 @@ is answered, and it's merged or one click from merged. Loop until that state.
 
 ### 10a. CI fix loop
 
-1. `gh pr checks <num> --watch --fail-level fail` — wait for all checks.
+1. Wait for checks. Interactive/local runs: `gh pr checks <num> --watch`. **In CI you
+   ARE one of the checks** — `--watch` would wait on your own still-running job
+   forever. When `GITHUB_RUN_ID` is set, poll `gh pr checks <num>` every ~60s instead,
+   ignoring the check whose name matches your own workflow (`$GITHUB_WORKFLOW`), and
+   treat "all passed, only my own check pending" as done.
 2. On failure: list failing checks, pull the logs
    (`gh run view <run-id> --log-failed`), diagnose the real cause — never "fix" a
    failure by deleting the test or loosening an assertion unless the test is genuinely
    wrong, and say so in the commit message if it is.
 3. Fix, run the relevant checks locally first, commit (repo voice, no AI attribution),
-   push, go to 1.
+   push, go to 1. CI caveat: pushes made with the default `GITHUB_TOKEN` do not
+   trigger workflows — if no fresh checks appear for your new SHA within ~2 minutes,
+   run the project's own checks locally and post the results in your summary comment
+   instead of waiting (the template's `PEACOCK_GH_TOKEN` secret avoids this).
 4. Cap at `pr.maxCiFixAttempts` (default 5). If still red, post one PR comment — human
    voice — summarizing what fails, what you tried, and your best hypothesis. Stop there.
 

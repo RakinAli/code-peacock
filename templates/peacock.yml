@@ -3,11 +3,18 @@
 #
 # Setup:
 #   1. Add repo secret ANTHROPIC_API_KEY (Option A) or OPENAI_API_KEY (Option B).
-#   2. If UI capture needs your app to boot (DB URL, env vars), add them to the
+#   2. STRONGLY RECOMMENDED: add secret PEACOCK_GH_TOKEN — a fine-grained PAT (or
+#      GitHub App token) with contents+pull-requests write. Pushes made with the
+#      default GITHUB_TOKEN do not trigger workflows, so without a PAT your own CI
+#      will not re-run on peacock's fix commits and the babysit loop can't see green.
+#   3. If UI capture needs your app to boot (DB URL, env vars), add them to the
 #      run step's `env` and make sure the dev server starts in CI.
-#   3. Optional: commit a peacock.config.json at your repo root (see README).
+#   4. Optional: commit a peacock.config.json at your repo root (see README).
 #
-# Triggers: every PR update, plus commenting "peacock" on a PR re-runs it.
+# Triggers: every same-repo PR update, plus a comment starting with "peacock" from a
+# repo owner/member/collaborator. Fork PRs are skipped on purpose: they run without
+# secrets and a read-only token, and letting a comment start an autonomous agent on
+# untrusted code would hand that code your secrets.
 
 name: peacock
 on:
@@ -23,8 +30,12 @@ concurrency:
 jobs:
   peacock:
     if: >-
-      github.event_name == 'pull_request' ||
-      (github.event.issue.pull_request && contains(github.event.comment.body, 'peacock'))
+      (github.event_name == 'pull_request' &&
+       github.event.pull_request.head.repo.full_name == github.repository) ||
+      (github.event_name == 'issue_comment' &&
+       github.event.issue.pull_request &&
+       startsWith(github.event.comment.body, 'peacock') &&
+       contains(fromJSON('["OWNER","MEMBER","COLLABORATOR"]'), github.event.comment.author_association))
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
@@ -39,6 +50,7 @@ jobs:
         with:
           ref: ${{ github.event_name == 'pull_request' && github.head_ref || '' }}
           fetch-depth: 0
+          token: ${{ secrets.PEACOCK_GH_TOKEN || github.token }}
 
       - uses: actions/setup-node@v4
         with:
@@ -48,7 +60,7 @@ jobs:
       - name: Run peacock (Claude Code)
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_TOKEN: ${{ secrets.PEACOCK_GH_TOKEN || github.token }}
         run: |
           npm install -g @anthropic-ai/claude-code
           claude plugin marketplace add RakinAli/code-peacock
@@ -59,7 +71,7 @@ jobs:
       # - name: Run peacock (Codex)
       #   env:
       #     OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
-      #     GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      #     GH_TOKEN: ${{ secrets.PEACOCK_GH_TOKEN || github.token }}
       #   run: |
       #     npm install -g @openai/codex
       #     git clone --depth 1 https://github.com/RakinAli/code-peacock /tmp/code-peacock
@@ -70,6 +82,7 @@ jobs:
       #        Run in PR mode on PR #$PR_NUMBER."
 
       # The pipeline's report is useful even when the run fails partway.
+      # .peacock/auth/ (credentials, browser session) is deliberately not uploaded.
       - name: Upload report + captures
         if: always()
         uses: actions/upload-artifact@v4
@@ -78,4 +91,6 @@ jobs:
           path: |
             .peacock/reports/
             .peacock/captures/
+            !.peacock/**/auth/**
+            !.peacock/**/storage-state.json
           if-no-files-found: ignore

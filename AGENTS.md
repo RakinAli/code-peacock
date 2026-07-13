@@ -14,7 +14,8 @@ Rules when changing this repo:
   from the TARGET project's node_modules at runtime (`ui-capture.mjs`), and GitHub
   auth goes through the `gh` CLI (`pr-threads.mjs`).
 - Dogfood `skills/peacock/references/clean-code.md` in every change here.
-- Verify before committing:
-  `bash scripts/strut.sh && node --check scripts/*.mjs && claude plugin validate .`
+- Verify before committing (`node --check` and `bash -n` only parse their first
+  argument, hence the loops):
+  `bash scripts/strut.sh && for f in scripts/*.mjs; do node --check "$f"; done && for f in scripts/*.sh; do bash -n "$f"; done && claude plugin validate .`
 - Commit messages and PRs follow `skills/peacock/references/pr-style.md` — no AI
   attribution anywhere.
