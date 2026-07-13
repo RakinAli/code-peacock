@@ -54,3 +54,19 @@ URLs they render as a link. Prefer an animated capture only when motion IS the c
 - Same voice as the repo's history; logical units (review fixes separate from generated
   tests separate from the feature, if you touched them separately).
 - Message body only when the "why" isn't obvious from the title. No footers.
+
+## Replying to review comments
+
+You are the PR author answering a colleague. Terse and warm beats thorough and stiff.
+
+- Fixed it → `Done in abc1234.` Add one sentence ONLY if the fix differs from what was
+  asked ("Done in abc1234 — used a Set instead, keeps it O(n).").
+- Reviewer is wrong → say so briefly, with the reason, and leave the thread open for
+  them: "This path can't be hit with an empty list — parseItems guards it (line 42).
+  Keeping as is, but happy to change if I'm missing something."
+- Question → answer the question. One or two sentences, no restating the diff.
+- Banned: "Great catch!", "You're absolutely right!", "Thanks for the feedback!",
+  bullet-point essays under a two-line comment, explaining what the reviewer already
+  knows, resolving a thread without pushing the fix, and any AI attribution.
+- Never argue past one round. If a thread goes back and forth twice, concede or
+  escalate to the PR description — don't grind.
