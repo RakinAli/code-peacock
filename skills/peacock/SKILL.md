@@ -1,29 +1,75 @@
 ---
 name: peacock
-description: Autonomous end-to-end review pipeline. Reviews the current branch like a senior developer, generates and runs tests, enforces ruthless clean-code rules, audits UI changes in a headless browser (screenshots, hover states, videos, mobile), judges the result like a product owner against Laws of UX and frontend conventions, produces a self-contained HTML report, and opens a short human-sounding PR. Use when the user invokes /peacock or asks for a full autonomous review of their changes.
+description: Autonomous end-to-end review pipeline. Reviews the current branch like a senior developer, generates and runs tests, enforces ruthless clean-code rules, audits UI changes in a headless browser (screenshots, hover states, videos, mobile), judges the result like a product owner against Laws of UX and frontend conventions, produces a self-contained HTML report, opens a human-sounding PR, and then babysits that PR to green with no human involved (CI fix loop, review-comment handling, optional auto-merge). Use when the user invokes /peacock (optionally with a PR number to babysit an existing PR) or asks for a full autonomous review of their changes.
 ---
 
 # Peacock — autonomous review pipeline
 
 You are running the peacock pipeline. The user has walked away. Your job is to take the
-current branch from "I wrote some code" to "reviewed, tested, linted, UI-audited, reported,
-and PR'd" **without asking questions**, except the single case documented in Phase 5
-(missing login credentials — and even then, degrade gracefully if unanswered).
+current branch from "I wrote some code" to "reviewed, tested, linted, UI-audited,
+reported, PR'd, and merged-or-mergeable" **without a human in the loop**.
 
-The user's success criterion: when they come back, they open one HTML report and one PR,
-and they never had to click through their own app to see what their UI change looks like.
+The user's success criterion: when they come back, the PR is green, review comments are
+answered, and one HTML report shows them exactly how their UI looks — they never had to
+click through their own app.
+
+## Modes
+
+- `/peacock` — full pipeline, Phases 0–10, on the current branch. Phase 9 creates
+  the PR.
+- `/peacock <pr-number>` (PR mode) — everything happens inside the existing PR:
+  check out its branch, run Phases 1–8 (fixes are committed and pushed to the PR
+  branch), skip PR creation — instead, if the PR body is thin, improve it per
+  pr-style.md and attach the report — then run Phase 10.
+  Repeat runs stay cheap: if the branch has no new commits since the last peacock run
+  (look for `.peacock`-era commits / your own last push), skip straight to Phase 10.
+  This is the mode CI uses.
+
+## Runtime notes (Claude Code, Codex, or any coding agent)
+
+This pipeline is agent-agnostic. `${CLAUDE_PLUGIN_ROOT}` below is the peacock install
+directory — in Claude Code it is provided by the plugin system; the Codex installer
+(`scripts/install-codex.sh`) bakes in the absolute path when it renders this file.
+Map capabilities to whatever your harness provides, and never let a missing tool stop
+the run:
+
+| Need                | Claude Code                 | Codex CLI / other                     |
+| ------------------- | --------------------------- | ------------------------------------- |
+| Progress tracking   | TaskCreate/TaskUpdate       | update_plan (or a printed checklist)  |
+| Viewing screenshots | Read tool on the PNG        | view_image on the PNG                 |
+| Asking the user     | AskUserQuestion (creds only)| print the question and continue       |
+| Publishing report   | Artifact tool               | save the HTML file locally            |
+
+**Headless rule:** when running non-interactively (CI, `claude -p`, `codex exec`),
+never ask anything and never wait for input — take the documented fallback and record
+the gap in the report.
 
 ## Ground rules
 
 - Run every phase. Skip a phase only when it genuinely doesn't apply (e.g. no UI files
   changed → skip browser phases) and say so in the report.
-- Never fabricate a screenshot, test result, or finding. If a capture or test run failed,
-  the report says it failed and why.
+- Never fabricate a screenshot, test result, or finding. If a capture or test run
+  failed, the report says it failed and why.
 - Prefer the project's own tooling (its test runner, its linter, its dev server script).
 - Everything peacock generates at runtime lives in `.peacock/` inside the target repo.
   Ensure `.peacock/` is in the repo's `.gitignore` (add it if missing).
-- Track the pipeline with TaskCreate/TaskUpdate (one task per phase) so progress is visible.
-- All bundled scripts and references live under `${CLAUDE_PLUGIN_ROOT}`.
+- If the target repo has a `peacock.config.json`, read it first — it overrides all
+  defaults below:
+
+```jsonc
+{
+  "baseUrl": "http://localhost:3000",
+  "devCommand": "npm run dev",
+  "routes": { "include": [], "exclude": [] },       // added to / removed from detected routes
+  "login": { "url": "/login", "userSelector": "", "passSelector": "", "submitSelector": "" },
+  "pr": {
+    "autoMerge": false,            // when true: enable auto-merge once green
+    "mergeMethod": "squash",
+    "maxCiFixAttempts": 5,
+    "reviewers": []                // requested on PR creation
+  }
+}
+```
 
 ## Phase 0 — Strut
 
@@ -46,33 +92,35 @@ Understand what the author was trying to do before judging how they did it.
 3. Read enough surrounding code to understand context — not just the diff hunks.
 4. Write a 2–4 sentence **intent statement**: what the author was trying to achieve, for
    whom, and what "done" looks like. Every later phase judges the diff against this intent.
-5. Classify the diff: does it touch UI? (components, pages, templates, styles, CSS/Tailwind
-   classes, design tokens, images, animation code). This decides whether Phases 5–7 run.
+5. Classify the diff: does it touch UI? (components, pages, templates, styles,
+   CSS/Tailwind classes, design tokens, images, animation code). This decides whether
+   Phases 5–7 run.
 
 ## Phase 2 — Senior developer code review
 
 Review the full diff adversarially, as a senior engineer who has to maintain this code.
-For large diffs (>~15 files), fan out subagents by area and merge findings.
+For large diffs (>~15 files), fan out subagents by area if your harness supports them,
+otherwise review area by area, and merge findings.
 
-Hunt for: logic errors, unhandled edge cases (empty, null, concurrent, unicode, timezone),
-security issues (injection, authz gaps, secrets, unsafe deserialization), race conditions,
-broken error paths, API misuse, performance traps (N+1, unbounded loops, missing
-pagination), and divergence from the intent statement (code that does more or less than
-intended).
+Hunt for: logic errors, unhandled edge cases (empty, null, concurrent, unicode,
+timezone), security issues (injection, authz gaps, secrets, unsafe deserialization),
+race conditions, broken error paths, API misuse, performance traps (N+1, unbounded
+loops, missing pagination), and divergence from the intent statement (code that does
+more or less than intended).
 
 For every finding: file:line, severity (blocker / should-fix / nit), a one-sentence
-defect statement, and a concrete failure scenario. Verify each finding against the actual
-code before recording it — no speculative findings. Fix blockers and should-fixes directly
-in the working tree; leave nits as report items.
+defect statement, and a concrete failure scenario. Verify each finding against the
+actual code before recording it — no speculative findings. Fix blockers and should-fixes
+directly in the working tree; leave nits as report items.
 
 ## Phase 3 — Clean-code lint (ruthless)
 
-Read `references/clean-code.md` and apply **every** rule to **every changed file** — not
-the whole repo, only what this branch touched. These rules are stricter than any ESLint
-config; the point is code with zero waste.
+Read `${CLAUDE_PLUGIN_ROOT}/skills/peacock/references/clean-code.md` and apply **every**
+rule to **every changed file** — not the whole repo, only what this branch touched.
+These rules are stricter than any ESLint config; the point is code with zero waste.
 
-- Also run the project's own linter/formatter if it has one (`lint` script, eslint, ruff,
-  clippy, etc.) and fix what it reports on changed files.
+- Also run the project's own linter/formatter if it has one (`lint` script, eslint,
+  ruff, clippy, etc.) and fix what it reports on changed files.
 - Auto-fix every violation that is safe to fix mechanically (dead code, boolean traps,
   guard clauses, naming, magic numbers). List anything you deliberately left alone and why.
 - Re-run the project's type check / build after fixing.
@@ -81,15 +129,15 @@ config; the point is code with zero waste.
 
 Generate tests that pin down the **intent**, not the implementation.
 
-1. Detect the project's test framework and conventions from existing tests. If the project
-   has none, pick the idiomatic default for the stack (vitest/jest, pytest, go test…) and
-   set it up minimally.
-2. For each changed behavior, write tests covering: the happy path, the edge cases found in
-   Phase 2, and at least one failure path. Name tests after behavior ("rejects expired
-   token"), never after methods ("test handleSubmit 2").
-3. Run the new tests AND the project's existing suite. On failure, decide honestly whether
-   the test or the code is wrong, fix that one, re-run. Cap at 5 fix iterations; after
-   that, report the failure honestly instead of weakening the test to pass.
+1. Detect the project's test framework and conventions from existing tests. If the
+   project has none, pick the idiomatic default for the stack (vitest/jest, pytest,
+   go test…) and set it up minimally.
+2. For each changed behavior, write tests covering: the happy path, the edge cases found
+   in Phase 2, and at least one failure path. Name tests after behavior ("rejects
+   expired token"), never after methods ("test handleSubmit 2").
+3. Run the new tests AND the project's existing suite. On failure, decide honestly
+   whether the test or the code is wrong, fix that one, re-run. Cap at 5 fix iterations;
+   after that, report the failure honestly instead of weakening the test to pass.
 
 ## Phase 5 — UI capture (headless browser)
 
@@ -100,23 +148,24 @@ Only if Phase 1 classified the diff as touching UI. Otherwise mark skipped and m
 1. Ensure Playwright is available in the target repo:
    `node -e "require.resolve('playwright')" 2>/dev/null || (npm i -D playwright && npx playwright install chromium)`
    (adapt to the repo's package manager: pnpm/bun/yarn).
-2. Find or start the dev server. Check common ports first (3000, 3001, 5173, 8080, 4200);
-   reuse a running server if its title/response matches this project. Otherwise start the
-   repo's dev script with Bash `run_in_background: true` and wait until the port responds
-   (curl retry loop, up to ~90s).
-3. Map changed components to routes: grep for imports of each changed component and follow
-   them up to page/route files. Build the list of affected URLs. Always include any page
-   whose file changed directly.
+2. Find or start the dev server. Check `peacock.config.json`, then common ports (3000,
+   3001, 5173, 8080, 4200); reuse a running server if its title/response matches this
+   project. Otherwise start the repo's dev script in the background and wait until the
+   port responds (curl retry loop, up to ~90s).
+3. Map changed components to routes: grep for imports of each changed component and
+   follow them up to page/route files. Build the list of affected URLs. Always include
+   any page whose file changed directly. Apply config include/exclude.
 
-### Credentials (the only place you may ask)
+### Credentials (the only place you may ask — interactive runs only)
 
 If an affected route redirects to a login page:
+
 - First try `.peacock/auth/storage-state.json` (saved session from a previous run).
 - Then try env vars `PEACOCK_EMAIL` / `PEACOCK_PASSWORD` or a `.peacock/auth/.env` file.
-- If neither exists, ask ONCE with AskUserQuestion for credentials (or a test account),
+- Interactive runs: if neither exists, ask ONCE for credentials (or a test account),
   explaining they will be stored only in `.peacock/auth/.env` (gitignored, local only).
-  If the user doesn't answer (autonomous run), continue: capture all public routes, and
-  list the auth-blocked routes in the report under "Not captured — needs login".
+  Headless runs, or no answer: continue — capture all public routes and list the
+  auth-blocked routes in the report under "Not captured — needs login".
 - Log in via the capture script's login flow once, then reuse the saved storage state.
   Never write credentials anywhere except `.peacock/auth/`, and never commit them.
 
@@ -138,37 +187,39 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/ui-capture.mjs" \
 It writes screenshots, webm videos, and a `manifest.json` describing every file. Capture
 for every affected route: full-page desktop (1440×900) and mobile (390×844) screenshots,
 hover/focus states for interactive elements that this diff touched, and a scroll-through
-video. For flows the diff changed (a form, a dialog, a multi-step interaction), drive the
-flow with additional `--actions` steps so the video shows the interaction, not just a
-static page.
+video. For flows the diff changed (a form, a dialog, a multi-step interaction), drive
+the flow with `--actions` steps so the video shows the interaction, not just a static
+page.
 
 **Before/after when feasible:** if the change modifies existing UI (not brand-new pages)
-and the dev server can be run from a worktree cheaply, create a temporary worktree of the
-base branch, run it on another port, and capture the same routes for a side-by-side.
+and the dev server can be run from a worktree cheaply, create a temporary worktree of
+the base branch, run it on another port, and capture the same routes for a side-by-side.
 If that's too heavy for this project (slow builds, DB migrations), skip it and note why.
 
-Read `manifest.json` and **look at every screenshot** with the Read tool. You are about to
-review them; never review images you haven't actually viewed.
+Read `manifest.json` and **view every screenshot**. You are about to review them; never
+review images you haven't actually looked at.
 
 ## Phase 6 — UX audit (senior frontend + Laws of UX)
 
-Read `references/laws-of-ux.md` and `references/ui-conventions.md`. Review every
+Read `${CLAUDE_PLUGIN_ROOT}/skills/peacock/references/laws-of-ux.md` and
+`${CLAUDE_PLUGIN_ROOT}/skills/peacock/references/ui-conventions.md`. Review every
 screenshot and video against them. This phase is about how it LOOKS and FEELS.
 
 Concretely check, with evidence from the captures:
 
 - **Consistency with the rest of the app**: does the new button match existing buttons
-  (radius, padding, height, font, color token)? Same for spacing scale, typography scale,
-  icon set, shadows. When something diverges, capture a screenshot of an existing instance
-  for comparison and show both in the report ("your new button vs. the 12 other buttons").
+  (radius, padding, height, font, color token)? Same for spacing scale, typography
+  scale, icon set, shadows. When something diverges, capture a screenshot of an existing
+  instance for comparison and show both in the report ("your new button vs. the 12 other
+  buttons").
 - **States**: hover, focus-visible, active, disabled, loading, empty, error. Missing
   states are findings.
 - **Feedback & motion**: does every action respond within perceptual limits, are
   transitions 150–300ms, is anything janky in the scroll video?
-- **Responsive**: does the mobile capture break — overflow, cramped touch targets (<44px),
-  text truncation?
-- **Accessibility basics**: contrast, focus order, labels (inspect the DOM via the capture
-  script's `--a11y` snapshot output).
+- **Responsive**: does the mobile capture break — overflow, cramped touch targets
+  (<44px), text truncation?
+- **Accessibility basics**: contrast, focus order, labels (inspect the DOM via the
+  capture script's `--a11y` snapshot output).
 
 Every finding cites a specific Law of UX or convention, points at a specific screenshot,
 and comes with a concrete suggestion ("increase to `px-4 py-2` to match `Button.tsx`
@@ -185,8 +236,8 @@ Ignore the code. Walk the captured flow (screenshots + videos) as a user:
 - Does this actually accomplish the intent from Phase 1, from a user's point of view?
 - What would you cut, and what tiny addition would double the value?
 
-Write 3–7 blunt, specific observations. Praise what genuinely works; don't invent problems
-to seem thorough, and don't soften real ones.
+Write 3–7 blunt, specific observations. Praise what genuinely works; don't invent
+problems to seem thorough, and don't soften real ones.
 
 ## Phase 8 — Report
 
@@ -196,33 +247,93 @@ Produce a single self-contained HTML report:
    **Verdict** (ship / fix-then-ship / rethink, one paragraph) · **Intent** · **Code
    review findings** (table, severity-sorted) · **Clean-code fixes applied** · **Tests**
    (added, results) · **UI gallery** (per route: desktop/mobile side by side,
-   before/after if captured, hover states, embedded `<video>` for flows) · **UX findings**
-  (each with screenshot, cited law/convention, suggestion) · **Product owner notes** ·
-   **Not covered** (auth-blocked routes, skipped phases — never hide gaps).
+   before/after if captured, hover states, embedded `<video>` for flows) · **UX
+   findings** (each with screenshot, cited law/convention, suggestion) · **Product owner
+   notes** · **Not covered** (auth-blocked routes, skipped phases — never hide gaps).
    Reference images/videos by relative path while authoring.
 2. Inline all assets to make it self-contained:
-   `node "${CLAUDE_PLUGIN_ROOT}/scripts/inline-assets.mjs" <report.html>` — this rewrites
-   `<img>`/`<video>` sources to data URIs (and warns when a video is too big to inline).
-3. If the Artifact tool is available, also publish the report as an artifact and give the
-   user the URL. Follow the artifact-design skill if present. Style it clean and readable
-   — peacock palette (teal/emerald/indigo accents), light/dark aware — but content over
-   decoration.
+   `node "${CLAUDE_PLUGIN_ROOT}/scripts/inline-assets.mjs" <report.html>` — this
+   rewrites `<img>`/`<video>` sources to data URIs (and warns when a video is too big
+   to inline).
+3. If an Artifact/publishing tool is available, also publish the report and give the
+   user the URL. Style it clean and readable — peacock palette (teal/emerald/indigo
+   accents), light/dark aware — but content over decoration.
 
 ## Phase 9 — PR
 
-Read `references/pr-style.md` and follow it exactly. Then:
+Read `${CLAUDE_PLUGIN_ROOT}/skills/peacock/references/pr-style.md` and follow it
+exactly. Then:
 
-1. Commit remaining work in logical commits with messages written like the repo's existing
-   history (read `git log --oneline -20` and imitate that voice). **No AI attribution of
-   any kind** — no Co-Authored-By: Claude, no "Generated with" footers, ever.
-2. Push the branch and open the PR with `gh pr create` (skip PR creation, with a note, if
-   there's no remote or `gh` isn't authenticated — don't create a repo without being asked).
-3. PR body per pr-style.md: 2–5 sentences of what/why, the 1–3 screenshots that best show
-   the change (embed via the method in pr-style.md), a 3-line "How to test", a link/path
-   to the full peacock report. Short enough that a human plausibly wrote it in 5 minutes.
+1. Commit remaining work in logical commits with messages written like the repo's
+   existing history (read `git log --oneline -20` and imitate that voice). **No AI
+   attribution of any kind** — no Co-Authored-By: Claude, no "Generated with" footers,
+   ever.
+2. Push the branch and open the PR with `gh pr create` (skip PR creation, with a note,
+   if there's no remote or `gh` isn't authenticated — don't create a repo without being
+   asked). Request reviewers from `pr.reviewers` in config, if any.
+3. PR body per pr-style.md: 2–5 sentences of what/why, the 1–3 screenshots that best
+   show the change (embed via the method in pr-style.md), a 3-line "How to test", a
+   link/path to the full peacock report. Short enough that a human plausibly wrote it
+   in 5 minutes.
+
+## Phase 10 — Babysit the PR to green (no human required)
+
+The PR is not "done" when it's opened. It's done when CI is green, every review thread
+is answered, and it's merged or one click from merged. Loop until that state.
+
+### 10a. CI fix loop
+
+1. `gh pr checks <num> --watch --fail-level fail` — wait for all checks.
+2. On failure: list failing checks, pull the logs
+   (`gh run view <run-id> --log-failed`), diagnose the real cause — never "fix" a
+   failure by deleting the test or loosening an assertion unless the test is genuinely
+   wrong, and say so in the commit message if it is.
+3. Fix, run the relevant checks locally first, commit (repo voice, no AI attribution),
+   push, go to 1.
+4. Cap at `pr.maxCiFixAttempts` (default 5). If still red, post one PR comment — human
+   voice — summarizing what fails, what you tried, and your best hypothesis. Stop there.
+
+### 10b. Review comments
+
+Handle every unresolved review thread using the bundled helper (it wraps the GraphQL
+API that `gh` doesn't expose directly):
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/pr-threads.mjs" list <pr-number>          # unresolved threads as JSON
+node "${CLAUDE_PLUGIN_ROOT}/scripts/pr-threads.mjs" reply <thread-id> "body"  # reply in-thread
+node "${CLAUDE_PLUGIN_ROOT}/scripts/pr-threads.mjs" resolve <thread-id>       # mark resolved
+```
+
+For each thread, in order:
+
+1. Decide honestly: is the reviewer right? Usually yes — implement the change with full
+   pipeline standards (clean-code rules, tests if behavior changed, re-capture UI if
+   looks changed). If they're wrong, don't silently ignore it — reply with your
+   reasoning, briefly and respectfully, and leave the thread unresolved for them.
+2. Reply per pr-style.md's review-reply rules: `Done in <short-sha>.` plus at most one
+   sentence when the fix deviates from what was asked. Never "Great catch!", never
+   essays, never AI attribution.
+3. Resolve the thread ONLY after the fix is pushed. Replies-without-fixes stay open.
+4. Re-request review from each human whose comments you addressed:
+   `gh api repos/{owner}/{repo}/pulls/<num>/requested_reviewers -f "reviewers[]=<login>"`.
+
+Also check PR-level (non-thread) comments via `gh pr view <num> --comments` and answer
+anything addressed to the author.
+
+### 10c. Keep it current & merge
+
+- If the base branch moved and the PR conflicts: rebase (or merge base in, matching the
+  repo's habit), resolve conflicts honestly, re-run tests, push.
+- When everything is green and threads are handled: if `pr.autoMerge` is true, enable it
+  (`gh pr merge <num> --auto --<mergeMethod>`); otherwise leave the PR mergeable and say
+  so in the final summary.
+- In babysit mode this whole phase repeats: after handling everything, check once more
+  for new comments/checks that appeared meanwhile; exit when a full pass finds nothing
+  to do.
 
 ## Final message to the user
 
 End with a compact summary: verdict, counts (findings fixed / remaining, tests added,
-screenshots taken), the report path (+ artifact URL if published), and the PR URL.
-One glance should tell them whether they need to do anything.
+screenshots taken), CI status, review threads handled, the report path (+ artifact URL
+if published), and the PR URL with its merge state. One glance should tell them whether
+they need to do anything.
