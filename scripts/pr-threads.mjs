@@ -11,17 +11,18 @@
 import { execFileSync } from "node:child_process";
 
 const LIST_QUERY = `
-query($owner: String!, $repo: String!, $pr: Int!) {
+query($owner: String!, $repo: String!, $pr: Int!, $cursor: String) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $pr) {
-      reviewThreads(first: 100) {
+      reviewThreads(first: 100, after: $cursor) {
+        pageInfo { hasNextPage endCursor }
         nodes {
           id
           isResolved
           isOutdated
           path
           line
-          comments(first: 50) {
+          comments(first: 100) {
             nodes { author { login } body url createdAt }
           }
         }
@@ -50,8 +51,16 @@ function graphql(query, variables) {
     const flag = typeof value === "number" ? "-F" : "-f";
     args.push(flag, `${key}=${value}`);
   }
-  const stdout = execFileSync("gh", args, { encoding: "utf8" });
-  return JSON.parse(stdout);
+  try {
+    return JSON.parse(
+      execFileSync("gh", args, { encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] })
+    );
+  } catch (error) {
+    // gh exits nonzero when the GraphQL response carries errors (e.g. PR not
+    // found, bad thread id) — surface its message, not a Node stack trace.
+    console.error(error.stderr?.trim() || String(error));
+    process.exit(1);
+  }
 }
 
 function currentRepo() {
@@ -62,10 +71,28 @@ function currentRepo() {
   return { owner: owner.login, repo: name };
 }
 
+function fetchAllThreads(owner, repo, prNumber) {
+  const threads = [];
+  let cursor = null;
+  do {
+    const variables = { owner, repo, pr: prNumber };
+    if (cursor) variables.cursor = cursor;
+    const result = graphql(LIST_QUERY, variables);
+    const pullRequest = result.data.repository.pullRequest;
+    if (!pullRequest) {
+      console.error(`PR #${prNumber} not found in ${owner}/${repo}`);
+      process.exit(1);
+    }
+    const page = pullRequest.reviewThreads;
+    threads.push(...page.nodes);
+    cursor = page.pageInfo.hasNextPage ? page.pageInfo.endCursor : null;
+  } while (cursor);
+  return threads;
+}
+
 function listUnresolved(prNumber) {
   const { owner, repo } = currentRepo();
-  const result = graphql(LIST_QUERY, { owner, repo, pr: prNumber });
-  const threads = result.data.repository.pullRequest.reviewThreads.nodes;
+  const threads = fetchAllThreads(owner, repo, prNumber);
   const unresolved = threads
     .filter((thread) => !thread.isResolved)
     .map((thread) => ({

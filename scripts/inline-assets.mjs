@@ -26,7 +26,12 @@ if (!reportPath) {
   process.exit(2);
 }
 const maxVideoIndex = rest.indexOf("--max-video-mb");
-const maxVideoBytes = (maxVideoIndex === -1 ? 8 : Number(rest[maxVideoIndex + 1])) * 1024 * 1024;
+const maxVideoMb = maxVideoIndex === -1 ? 8 : Number(rest[maxVideoIndex + 1]);
+if (!Number.isFinite(maxVideoMb) || maxVideoMb <= 0) {
+  console.error("--max-video-mb requires a positive number");
+  process.exit(2);
+}
+const maxVideoBytes = maxVideoMb * 1024 * 1024;
 
 const html = await readFile(reportPath, "utf8");
 const reportDir = path.dirname(path.resolve(reportPath));

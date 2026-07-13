@@ -39,19 +39,25 @@ const SETTLE_MS = 600;
 const HOVER_TRANSITION_MS = 400;
 const NETWORK_IDLE_TIMEOUT_MS = 10_000;
 
+const BOOLEAN_FLAGS = new Set(["help", "video", "a11y"]);
+
 function parseArgs(argv) {
   const flags = {};
   for (let i = 0; i < argv.length; i++) {
     const arg = argv[i];
     if (!arg.startsWith("--")) continue;
     const key = arg.slice(2);
+    if (BOOLEAN_FLAGS.has(key)) {
+      flags[key] = true;
+      continue;
+    }
     const next = argv[i + 1];
     if (next === undefined || next.startsWith("--")) {
-      flags[key] = true;
-    } else {
-      flags[key] = next;
-      i++;
+      console.error(`flag --${key} requires a value`);
+      process.exit(2);
     }
+    flags[key] = next;
+    i++;
   }
   return flags;
 }
@@ -95,26 +101,27 @@ async function settle(page) {
   await page.waitForTimeout(SETTLE_MS);
 }
 
-async function login(browser, flags, out) {
-  const email = process.env.PEACOCK_EMAIL;
-  const password = process.env.PEACOCK_PASSWORD;
-  if (!email || !password) {
+async function login(browser, flags, credentials) {
+  if (!credentials.email || !credentials.password) {
     console.warn("login-url given but PEACOCK_EMAIL/PEACOCK_PASSWORD missing — skipping login");
     return;
   }
   const context = await browser.newContext({ viewport: VIEWPORTS.desktop });
   const page = await context.newPage();
-  await page.goto(flags["login-url"], { waitUntil: "domcontentloaded" });
+  const loginUrl = new URL(flags["login-url"], flags["base-url"]).href;
+  await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
   await settle(page);
   const userSelector =
     flags["login-user-selector"] ?? "input[type=email], input[name=email], input[name=username]";
   const passSelector = flags["login-pass-selector"] ?? "input[type=password]";
   const submitSelector = flags["login-submit-selector"] ?? "button[type=submit]";
-  await page.locator(userSelector).first().fill(email);
-  await page.locator(passSelector).first().fill(password);
+  await page.locator(userSelector).first().fill(credentials.email);
+  await page.locator(passSelector).first().fill(credentials.password);
   await page.locator(submitSelector).first().click();
   await settle(page);
-  const statePath = flags["storage-state"] ?? path.join(out, "storage-state.json");
+  // Session state lives under .peacock/auth/, never under the captures dir —
+  // captures get uploaded as CI artifacts, auth material must not.
+  const statePath = flags["storage-state"] ?? path.join(".peacock", "auth", "storage-state.json");
   await mkdir(path.dirname(statePath), { recursive: true });
   await context.storageState({ path: statePath });
   await context.close();
@@ -254,8 +261,10 @@ if (flags.help || !flags["base-url"] || !flags.routes) {
 }
 
 const authEnv = await loadDotEnv(path.join(".peacock", "auth", ".env"));
-process.env.PEACOCK_EMAIL ??= authEnv.PEACOCK_EMAIL;
-process.env.PEACOCK_PASSWORD ??= authEnv.PEACOCK_PASSWORD;
+const credentials = {
+  email: process.env.PEACOCK_EMAIL ?? authEnv.PEACOCK_EMAIL,
+  password: process.env.PEACOCK_PASSWORD ?? authEnv.PEACOCK_PASSWORD,
+};
 
 const out = flags.out ?? path.join(".peacock", "captures");
 await mkdir(out, { recursive: true });
@@ -266,7 +275,15 @@ const manifest = [];
 const failures = [];
 
 const flowSteps = flags.actions ? JSON.parse(await readFile(flags.actions, "utf8")) : null;
-if (flags["login-url"]) await login(browser, flags, out);
+if (flags["login-url"]) {
+  // A failed login must not kill the run — capture public routes and report the gap.
+  try {
+    await login(browser, flags, credentials);
+  } catch (error) {
+    failures.push({ route: "(login)", error: String(error) });
+    console.error(`  LOGIN FAILED, continuing without a session: ${error}`);
+  }
+}
 
 for (const route of flags.routes.split(",").map((r) => r.trim()).filter(Boolean)) {
   const url = new URL(route, flags["base-url"]).href;
