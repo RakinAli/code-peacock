@@ -55,28 +55,12 @@ gh auth status >/dev/null 2>&1 || { echo "error: gh is not authenticated (set GH
 
 log() { printf '%s peacock-autopilot: %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 
-# The merge kill-switch. `gh pr merge` (and a direct push to the default branch)
-# are wrapped so that even if the agent tries them, they fail loudly instead of
-# merging. We prepend a shim dir to PATH holding a fake `gh` that refuses merge
-# and forwards everything else to the real gh.
-setup_merge_killswitch() {
-  local shim_dir="$WORKDIR/.shim"
-  mkdir -p "$shim_dir"
-  local real_gh
-  real_gh="$(command -v gh)"
-  cat > "$shim_dir/gh" <<SHIM
-#!/usr/bin/env bash
-# Peacock kill-switch: block PR merges, forward everything else to real gh.
-if [[ "\$1" == "pr" && "\$2" == "merge" ]]; then
-  echo "peacock-autopilot: 'gh pr merge' is blocked — peacock never merges." >&2
-  exit 1
-fi
-exec "$real_gh" "\$@"
-SHIM
-  chmod +x "$shim_dir/gh"
-  export PATH="$shim_dir:$PATH"
-  export PEACOCK_NEVER_MERGE=1
-}
+# The merge kill-switch. Sourcing the shared script defines
+# peacock_install_killswitch, which writes `gh` and `git` PATH shims that refuse
+# every mechanical merge / protected-branch-push vector and forward everything
+# else to the real binaries.
+# shellcheck source=scripts/merge-killswitch.sh
+source "$(dirname "${BASH_SOURCE[0]}")/merge-killswitch.sh"
 
 prepare_repo() {
   if [[ ! -d "$WORKDIR/repo/.git" ]]; then
@@ -143,7 +127,7 @@ one_pass() {
   done <<< "$prs"
 }
 
-setup_merge_killswitch
+peacock_install_killswitch "$WORKDIR/.shim"
 log "target=$REPO agent=$AGENT interval=${INTERVAL}s workdir=$WORKDIR"
 
 if [[ "$INTERVAL" -le 0 ]]; then
