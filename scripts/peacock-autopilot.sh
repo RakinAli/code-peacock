@@ -63,11 +63,18 @@ log() { printf '%s peacock-autopilot: %s\n' "$(date -u +%H:%M:%S)" "$*"; }
 source "$(dirname "${BASH_SOURCE[0]}")/merge-killswitch.sh"
 
 prepare_repo() {
+  local default_branch="$1"
   if [[ ! -d "$WORKDIR/repo/.git" ]]; then
     log "cloning $REPO"
     gh repo clone "$REPO" "$WORKDIR/repo" -- --quiet
   fi
   git -C "$WORKDIR/repo" fetch --all --prune --quiet
+  # A prior pass may have aborted mid-checkout, leaving local edits or untracked
+  # files behind. Reset to a pristine default-branch checkout so nothing from a
+  # dead run leaks into the next PR's working tree or its diff.
+  git -C "$WORKDIR/repo" checkout --quiet --force "$default_branch"
+  git -C "$WORKDIR/repo" reset --hard --quiet "origin/$default_branch"
+  git -C "$WORKDIR/repo" clean -fdq
 }
 
 # Absolute state dir OUTSIDE the repo checkout, so review markers survive branch
@@ -95,17 +102,16 @@ $prompt"
 }
 
 one_pass() {
-  prepare_repo
+  local default_branch repo_owner prs
+  default_branch="$(gh repo view "$REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
+  repo_owner="${REPO%%/*}"
+  prepare_repo "$default_branch"
   mkdir -p "$WORKDIR/state"
-  local prs
   # Open PRs whose base is the repo default branch, oldest first, capped.
   # Fork PRs (head repo owner != target owner) carry untrusted code, so they are
   # excluded here — peacock must never check out an untrusted head with the
   # autopilot's credentials on PATH. --limit matches MAX_PRS so gh's default 30
   # never silently drops PRs before our own cap applies.
-  local default_branch repo_owner
-  default_branch="$(gh repo view "$REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
-  repo_owner="${REPO%%/*}"
   prs="$(gh pr list --repo "$REPO" --state open --base "$default_branch" --limit "$MAX_PRS" \
           --json number,headRefOid,isDraft,headRepositoryOwner --jq \
           ".[] | select(.isDraft==false and .headRepositoryOwner.login==\"$repo_owner\") | \"\(.number) \(.headRefOid)\"" \
