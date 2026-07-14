@@ -99,11 +99,17 @@ one_pass() {
   mkdir -p "$WORKDIR/state"
   local prs
   # Open PRs whose base is the repo default branch, oldest first, capped.
-  local default_branch
+  # Fork PRs (head repo owner != target owner) carry untrusted code, so they are
+  # excluded here — peacock must never check out an untrusted head with the
+  # autopilot's credentials on PATH. --limit matches MAX_PRS so gh's default 30
+  # never silently drops PRs before our own cap applies.
+  local default_branch repo_owner
   default_branch="$(gh repo view "$REPO" --json defaultBranchRef --jq '.defaultBranchRef.name')"
-  prs="$(gh pr list --repo "$REPO" --state open --base "$default_branch" \
-          --json number,headRefOid,isDraft --jq \
-          ".[] | select(.isDraft==false) | \"\(.number) \(.headRefOid)\"" | head -n "$MAX_PRS")"
+  repo_owner="${REPO%%/*}"
+  prs="$(gh pr list --repo "$REPO" --state open --base "$default_branch" --limit "$MAX_PRS" \
+          --json number,headRefOid,isDraft,headRepositoryOwner --jq \
+          ".[] | select(.isDraft==false and .headRepositoryOwner.login==\"$repo_owner\") | \"\(.number) \(.headRefOid)\"" \
+          | head -n "$MAX_PRS")"
 
   if [[ -z "$prs" ]]; then
     log "no open PRs to review against $default_branch"
