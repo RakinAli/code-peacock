@@ -125,7 +125,12 @@ one_pass() {
     fi
     log "reviewing PR #$number (head $head_sha)"
     if run_agent "$number"; then
-      echo "$head_sha" > "$marker"
+      # run_agent may have pushed fixes to the PR's head branch, so record the
+      # POST-run head SHA. Storing the pre-run SHA would make the PR peacock
+      # just updated look changed next pass and get re-reviewed from scratch.
+      local post_sha
+      post_sha="$(gh pr view "$number" --repo "$REPO" --json headRefOid --jq '.headRefOid' 2>/dev/null || true)"
+      echo "${post_sha:-$head_sha}" > "$marker"
       log "PR #$number done — left for a human to merge"
     else
       log "PR #$number run failed (exit $?) — will retry next pass"
