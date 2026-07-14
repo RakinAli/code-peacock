@@ -65,6 +65,12 @@ jobs:
           npm install -g @anthropic-ai/claude-code
           claude plugin marketplace add RakinAli/code-peacock
           claude plugin install code-peacock@code-peacock --scope user
+          # Put the merge kill-switch on PATH for this run too. Without it the
+          # per-PR CI path had no mechanical guard — only the behavioral rule and
+          # branch protection. The shim refuses every gh/git merge vector.
+          git clone --depth 1 https://github.com/RakinAli/code-peacock /tmp/code-peacock
+          source /tmp/code-peacock/scripts/merge-killswitch.sh
+          peacock_install_killswitch "$RUNNER_TEMP/peacock-shim"
           claude -p "/peacock $PR_NUMBER" --dangerously-skip-permissions
 
       # ── Option B: Codex CLI (delete Option A and uncomment) ───────────────
@@ -76,6 +82,9 @@ jobs:
       #     npm install -g @openai/codex
       #     git clone --depth 1 https://github.com/RakinAli/code-peacock /tmp/code-peacock
       #     bash /tmp/code-peacock/scripts/install-codex.sh
+      #     # Same merge kill-switch as Option A — block every gh/git merge vector.
+      #     source /tmp/code-peacock/scripts/merge-killswitch.sh
+      #     peacock_install_killswitch "$RUNNER_TEMP/peacock-shim"
       #     codex exec --full-auto --skip-git-repo-check \
       #       "$(cat ~/.codex/prompts/peacock.md)
 
