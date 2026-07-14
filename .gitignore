@@ -1,3 +1,9 @@
 node_modules/
 .peacock/
 .DS_Store
+
+# ralph-loop local state (never commit)
+.claude/ralph-loop.local.md
+
+# ralph loop harness (local driver, not part of the plugin)
+/ralph/

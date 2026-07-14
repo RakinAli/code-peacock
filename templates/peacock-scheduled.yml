@@ -1,0 +1,71 @@
+# Peacock — scheduled autopilot. Reviews your OPEN PRs on a timer, hands-free,
+# on GitHub's infrastructure. Your laptop can be off.
+#
+# Copy to .github/workflows/peacock-scheduled.yml in YOUR project.
+#
+# It NEVER merges. It reviews every open PR (fix CI, answer comments, keep it
+# mergeable) and stops one click short — a human merges.
+#
+# Setup:
+#   1. Secrets: ANTHROPIC_API_KEY (or OPENAI_API_KEY for the Codex variant).
+#   2. Recommended: PEACOCK_GH_TOKEN — a fine-grained PAT with contents+PR write
+#      but NO admin. Pushes with the default GITHUB_TOKEN don't re-trigger CI.
+#   3. STRONGLY recommended backstop: protect your default branch (Settings →
+#      Branches) to require a human approval before merge. Peacock never merges,
+#      and branch protection guarantees nothing automated ever can.
+#   4. Tune the cron below. Default: every 6 hours on weekdays.
+
+name: peacock-scheduled
+on:
+  schedule:
+    - cron: "0 */6 * * 1-5"   # every 6h, Mon–Fri (UTC)
+  workflow_dispatch: {}        # lets you trigger a pass manually from the Actions tab
+
+concurrency:
+  group: peacock-scheduled
+  cancel-in-progress: false
+
+permissions:
+  contents: write          # push fixes to PR head branches (never to the base)
+  pull-requests: write     # comment, review, request reviewers — NOT merge
+  checks: read
+  actions: read
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Review every open PR (never merge)
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          GH_TOKEN: ${{ secrets.PEACOCK_GH_TOKEN || github.token }}
+          REPO: ${{ github.repository }}
+        run: |
+          npm install -g @anthropic-ai/claude-code
+          git clone --depth 1 https://github.com/RakinAli/code-peacock /tmp/code-peacock
+          claude plugin marketplace add RakinAli/code-peacock
+          claude plugin install code-peacock@code-peacock --scope user
+          # The autopilot script enumerates open PRs and runs peacock on each,
+          # with a hard kill-switch that blocks `gh pr merge`.
+          bash /tmp/code-peacock/scripts/peacock-autopilot.sh \
+            --repo "$REPO" \
+            --agent claude \
+            --once \
+            --workdir "$RUNNER_TEMP/peacock"
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: peacock-scheduled-reports
+          path: |
+            ${{ runner.temp }}/peacock/repo/.peacock/reports/
+            ${{ runner.temp }}/peacock/repo/.peacock/captures/
+            !**/auth/**
+            !**/storage-state.json
+          if-no-files-found: ignore

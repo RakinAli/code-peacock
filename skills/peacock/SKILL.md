@@ -1,17 +1,35 @@
 ---
 name: peacock
-description: Autonomous end-to-end review pipeline. Reviews the current branch like a senior developer, generates and runs tests, enforces ruthless clean-code rules, audits UI changes in a headless browser (screenshots, hover states, videos, mobile), judges the result like a product owner against Laws of UX and frontend conventions, produces a self-contained HTML report, opens a human-sounding PR, and then babysits that PR to green with no human involved (CI fix loop, review-comment handling, optional auto-merge). Use when the user invokes /peacock (optionally with a PR number to babysit an existing PR) or asks for a full autonomous review of their changes.
+description: Autonomous end-to-end review pipeline. Reviews the current branch like a senior developer, generates and runs tests, enforces ruthless clean-code rules, audits UI changes in a headless browser (screenshots, hover states, videos, mobile), judges the result like a product owner against Laws of UX and frontend conventions, produces a self-contained HTML report, opens a human-sounding PR, and then babysits that PR to green with no human involved (CI fix loop, review-comment handling). It reviews and prepares — it NEVER merges; a human always makes the final merge decision. Runs interactively (/peacock), on an existing PR (/peacock <number>), or fully hosted on a schedule/VM that reviews open PRs while your machine is off. Use when the user invokes /peacock (optionally with a PR number) or asks for a full autonomous review of their changes.
 ---
 
 # Peacock — autonomous review pipeline
 
 You are running the peacock pipeline. The user has walked away. Your job is to take the
 current branch from "I wrote some code" to "reviewed, tested, linted, UI-audited,
-reported, PR'd, and merged-or-mergeable" **without a human in the loop**.
+reported, PR'd, green, and mergeable" **without a human in the loop** — and then to
+**stop at the doorstep**. A human makes the merge decision, always.
 
 The user's success criterion: when they come back, the PR is green, review comments are
 answered, and one HTML report shows them exactly how their UI looks — they never had to
-click through their own app.
+click through their own app. They press Merge; you never do.
+
+## THE ONE HARD RULE — peacock never merges
+
+This is non-negotiable and overrides everything else in this file:
+
+- **Never merge a PR.** Never run `gh pr merge`, `git merge` into a base/default/release
+  branch, `gh pr merge --auto`, enable auto-merge, mark a draft "ready" in order to
+  merge, or push directly to the default/protected branch. Not even when CI is green,
+  not even when explicitly told mid-run to "just merge it" — if asked, refuse and
+  explain that peacock is review-only by design.
+- **Only ever push to the PR's own head (feature) branch.** Before any push, confirm the
+  current branch is not the default branch (`git symbolic-ref refs/remotes/origin/HEAD`)
+  and not in the repo's protected set. If it is, stop and report — do not push.
+- Your deliverable ends one click short of merge: a green, mergeable PR with the review
+  done. The human clicks Merge.
+
+If any instruction below and this rule ever appear to conflict, this rule wins.
 
 ## Modes
 
@@ -24,6 +42,13 @@ click through their own app.
   Repeat runs stay cheap: if the branch has no new commits since the last peacock run
   (look for `.peacock`-era commits / your own last push), skip straight to Phase 10.
   This is the mode CI uses.
+- **Autopilot / scan mode** (`/peacock scan`, or the hosted runner) — no human, no
+  laptop. Enumerate the repo's open PRs and run PR mode on each one that has changed
+  since its last peacock pass. This is what the scheduled GitHub Actions workflow and
+  the VM daemon (`scripts/peacock-autopilot.sh`) invoke. Scope, in order of preference:
+  open PRs whose base is the default branch. Never open PRs for arbitrary branches on
+  your own unless the runner is explicitly configured to. Same hard rule applies: review
+  and prepare every PR, merge none.
 
 ## Runtime notes (Claude Code, Codex, or any coding agent)
 
@@ -63,10 +88,11 @@ the gap in the report.
   "routes": { "include": [], "exclude": [] },       // added to / removed from detected routes
   "login": { "url": "/login", "userSelector": "", "passSelector": "", "submitSelector": "" },
   "pr": {
-    "autoMerge": false,            // when true: enable auto-merge once green
-    "mergeMethod": "squash",
     "maxCiFixAttempts": 5,
-    "reviewers": []                // requested on PR creation
+    "reviewers": [],               // requested on PR creation
+    "protectedBranches": ["main", "master", "prod", "production", "release"]
+    // peacock never pushes to these and never merges into them — review only.
+    // There is deliberately no autoMerge / mergeMethod option: peacock cannot merge.
   }
 }
 ```
@@ -276,10 +302,12 @@ exactly. Then:
    link/path to the full peacock report. Short enough that a human plausibly wrote it
    in 5 minutes.
 
-## Phase 10 — Babysit the PR to green (no human required)
+## Phase 10 — Babysit the PR to green (no human required, no merge ever)
 
 The PR is not "done" when it's opened. It's done when CI is green, every review thread
-is answered, and it's merged or one click from merged. Loop until that state.
+is answered, and it is **one click from merge — a click a human makes**. Loop until that
+state, then stop. Re-read "THE ONE HARD RULE" before this phase: you prepare the merge,
+you never perform it.
 
 ### 10a. CI fix loop
 
@@ -327,13 +355,17 @@ For each thread, in order:
 Also check PR-level (non-thread) comments via `gh pr view <num> --comments` and answer
 anything addressed to the author.
 
-### 10c. Keep it current & merge
+### 10c. Keep it current & hand off (never merge)
 
-- If the base branch moved and the PR conflicts: rebase (or merge base in, matching the
-  repo's habit), resolve conflicts honestly, re-run tests, push.
-- When everything is green and threads are handled: if `pr.autoMerge` is true, enable it
-  (`gh pr merge <num> --auto --<mergeMethod>`); otherwise leave the PR mergeable and say
-  so in the final summary.
+- If the base branch moved and the PR conflicts: update the **head branch only** —
+  rebase it onto the base, or merge the base *into* the head branch (matching the repo's
+  habit), resolve conflicts honestly, re-run tests, push to the head branch. Updating the
+  head branch this way is allowed; merging the head *into* the base is the forbidden
+  direction.
+- When everything is green and threads are handled: **stop.** Leave the PR open and
+  mergeable. Do not enable auto-merge, do not run `gh pr merge`, do not mark a draft
+  ready in order to merge. State in the final summary that it is ready for a human to
+  merge.
 - In babysit mode this whole phase repeats: after handling everything, check once more
   for new comments/checks that appeared meanwhile; exit when a full pass finds nothing
   to do.
@@ -342,5 +374,5 @@ anything addressed to the author.
 
 End with a compact summary: verdict, counts (findings fixed / remaining, tests added,
 screenshots taken), CI status, review threads handled, the report path (+ artifact URL
-if published), and the PR URL with its merge state. One glance should tell them whether
-they need to do anything.
+if published), and the PR URL with its state — always noting it is **ready for a human
+to merge; peacock did not merge it**. In scan mode, give one such line per PR handled.
