@@ -67,9 +67,13 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: peacock-scheduled-reports
+          # Exclude patterns must share the SAME absolute root as the includes.
+          # actions/upload-artifact roots a bare `!**/auth/**` at the workspace,
+          # not at runner.temp where these files live, so it would silently match
+          # nothing and upload credentials. Anchor the excludes like peacock.yml.
           path: |
             ${{ runner.temp }}/peacock/repo/.peacock/reports/
             ${{ runner.temp }}/peacock/repo/.peacock/captures/
-            !**/auth/**
-            !**/storage-state.json
+            !${{ runner.temp }}/peacock/repo/.peacock/**/auth/**
+            !${{ runner.temp }}/peacock/repo/.peacock/**/storage-state.json
           if-no-files-found: ignore
