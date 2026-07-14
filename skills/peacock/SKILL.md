@@ -43,8 +43,9 @@ at the process level even if the agent tries them. That shim guards **only** the
 autopilot runner. In the per-PR CI path (`templates/peacock.yml`) and the interactive
 `/peacock` path the guarantee is **behavioral (this rule) PLUS repository branch
 protection** — the branch-protection backstop, requiring human approval before merge, is
-mandatory and is what stops a write-scoped token from technically merging. Never rely on
-behavior alone where the shim is not installed.
+mandatory (not merely recommended) and is what stops a write-scoped token from technically
+merging. The runner's GitHub token must be **non-admin** so it cannot bypass
+branch protection. Never rely on behavior alone where the shim is not installed.
 
 If any instruction below and this rule ever appear to conflict, this rule wins.
 

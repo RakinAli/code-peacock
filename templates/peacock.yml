@@ -4,12 +4,19 @@
 # Setup:
 #   1. Add repo secret ANTHROPIC_API_KEY (Option A) or OPENAI_API_KEY (Option B).
 #   2. STRONGLY RECOMMENDED: add secret PEACOCK_GH_TOKEN — a fine-grained PAT (or
-#      GitHub App token) with contents+pull-requests write. Pushes made with the
-#      default GITHUB_TOKEN do not trigger workflows, so without a PAT your own CI
-#      will not re-run on peacock's fix commits and the babysit loop can't see green.
-#   3. If UI capture needs your app to boot (DB URL, env vars), add them to the
+#      GitHub App token) with contents+pull-requests write, and NO admin. Pushes
+#      made with the default GITHUB_TOKEN do not trigger workflows, so without a
+#      PAT your own CI will not re-run on peacock's fix commits and the babysit
+#      loop can't see green. Keep it non-admin so it cannot bypass the branch
+#      protection below.
+#   3. REQUIRED backstop — branch protection: protect your default AND release
+#      branches to require human approval before any merge. This is mandatory, not
+#      optional. This per-PR path has no merge kill-switch (that shim only guards
+#      the autopilot runner), so a write-scoped token could technically merge;
+#      branch protection is what actually guarantees nothing automated ever merges.
+#   4. If UI capture needs your app to boot (DB URL, env vars), add them to the
 #      run step's `env` and make sure the dev server starts in CI.
-#   4. Optional: commit a peacock.config.json at your repo root (see README).
+#   5. Optional: commit a peacock.config.json at your repo root (see README).
 #
 # Triggers: every same-repo PR update, plus a comment starting with "peacock" from a
 # repo owner/member/collaborator. Fork PRs are skipped on purpose: they run without

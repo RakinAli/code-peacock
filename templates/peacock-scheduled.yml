@@ -10,9 +10,13 @@
 #   1. Secrets: ANTHROPIC_API_KEY (or OPENAI_API_KEY for the Codex variant).
 #   2. Recommended: PEACOCK_GH_TOKEN — a fine-grained PAT with contents+PR write
 #      but NO admin. Pushes with the default GITHUB_TOKEN don't re-trigger CI.
-#   3. STRONGLY recommended backstop: protect your default branch (Settings →
-#      Branches) to require a human approval before merge. Peacock never merges,
-#      and branch protection guarantees nothing automated ever can.
+#      The token MUST be non-admin: an admin token can bypass the branch
+#      protection below, which would defeat the whole backstop.
+#   3. REQUIRED backstop — branch protection: protect your default AND release
+#      branches (Settings → Branches) to require human approval before any merge.
+#      This is mandatory, not optional. The merge kill-switch only guards the
+#      autopilot path; a write-scoped token can technically merge on its own, so
+#      branch protection is what actually guarantees nothing automated ever merges.
 #   4. Tune the cron below. Default: every 6 hours on weekdays.
 
 name: peacock-scheduled
