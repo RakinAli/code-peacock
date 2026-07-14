@@ -1,7 +1,7 @@
 {
   "name": "code-peacock",
   "description": "Autonomous review pipeline: senior-dev code review, generated tests, ruthless clean-code lint, headless-browser UI/UX audit with screenshots and videos, an HTML report, and a human-sounding PR. Run /peacock and walk away.",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "author": {
     "name": "Rakin Ali",
     "email": "rakin@vetnio.com"
