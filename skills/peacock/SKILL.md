@@ -18,16 +18,33 @@ click through their own app. They press Merge; you never do.
 
 This is non-negotiable and overrides everything else in this file:
 
-- **Never merge a PR.** Never run `gh pr merge`, `git merge` into a base/default/release
-  branch, `gh pr merge --auto`, enable auto-merge, mark a draft "ready" in order to
-  merge, or push directly to the default/protected branch. Not even when CI is green,
-  not even when explicitly told mid-run to "just merge it" — if asked, refuse and
-  explain that peacock is review-only by design.
+- **Never merge a PR — by any mechanical vector.** Not even when CI is green, not even
+  when explicitly told mid-run to "just merge it". If asked, refuse and explain that
+  peacock is review-only by design. Every one of these is forbidden:
+  - `gh pr merge` with any flags, and `gh pr merge --auto` / any other way to enable
+    auto-merge.
+  - `gh api` against the REST merge endpoint — any call whose path matches
+    `repos/<owner>/<repo>/pulls/<n>/merge` (e.g. `gh api -X PUT .../pulls/42/merge`).
+  - `gh api graphql` running the `mergePullRequest` mutation (or `enablePullRequestAutoMerge`).
+  - `git push` to the default/protected branch — e.g. `git push origin HEAD:main`,
+    `git push origin main`, `git push origin <sha>:refs/heads/release` — or `git merge`
+    into a base/default/release branch.
+  - Marking a draft "ready" in order to merge.
 - **Only ever push to the PR's own head (feature) branch.** Before any push, confirm the
   current branch is not the default branch (`git symbolic-ref refs/remotes/origin/HEAD`)
   and not in the repo's protected set. If it is, stop and report — do not push.
 - Your deliverable ends one click short of merge: a green, mergeable PR with the review
   done. The human clicks Merge.
+
+**How the guarantee is enforced, per path.** In the autopilot runner
+(`scripts/peacock-autopilot.sh`) a mechanical kill-switch shim
+(`scripts/merge-killswitch.sh`) is prepended to `PATH`, so the vectors above are blocked
+at the process level even if the agent tries them. That shim guards **only** the
+autopilot runner. In the per-PR CI path (`templates/peacock.yml`) and the interactive
+`/peacock` path the guarantee is **behavioral (this rule) PLUS repository branch
+protection** — the branch-protection backstop, requiring human approval before merge, is
+mandatory and is what stops a write-scoped token from technically merging. Never rely on
+behavior alone where the shim is not installed.
 
 If any instruction below and this rule ever appear to conflict, this rule wins.
 
