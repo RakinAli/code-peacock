@@ -10,7 +10,7 @@ drift from `SKILL.md`.
 Rules when changing this repo:
 
 - Keep `SKILL.md` runtime-neutral. `${CLAUDE_PLUGIN_ROOT}` is the one substitution
-  token (the Codex installer sed-replaces it with the checkout path); don't introduce
+  token (the Codex installer string-replaces it with the checkout path); don't introduce
   other Claude-only or Codex-only syntax outside the "Runtime notes" table.
 - Scripts must run with zero npm dependencies of their own. Playwright is resolved
   from the TARGET project's node_modules at runtime (`ui-capture.mjs`), and GitHub

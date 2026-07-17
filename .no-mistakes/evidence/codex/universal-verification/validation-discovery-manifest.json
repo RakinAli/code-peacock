@@ -1,0 +1,123 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-17T17:47:57.096Z",
+  "projectRoot": "/var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-validate.lukZhK/polyglot-app",
+  "status": "dry-run",
+  "summary": {
+    "total": 0,
+    "passed": 0,
+    "failed": 0,
+    "skipped": 0
+  },
+  "configuration": {
+    "skippedCategories": []
+  },
+  "discovered": [
+    {
+      "id": "package-lint",
+      "category": "lint",
+      "source": "package.json#scripts.lint",
+      "command": "pnpm run 'lint'",
+      "logName": "package-lint"
+    },
+    {
+      "id": "package-format-check",
+      "category": "format",
+      "source": "package.json#scripts.format:check",
+      "command": "pnpm run 'format:check'",
+      "logName": "package-format-check"
+    },
+    {
+      "id": "package-typecheck",
+      "category": "types",
+      "source": "package.json#scripts.typecheck",
+      "command": "pnpm run 'typecheck'",
+      "logName": "package-typecheck"
+    },
+    {
+      "id": "package-test-unit",
+      "category": "test",
+      "source": "package.json#scripts.test:unit",
+      "command": "pnpm run 'test:unit'",
+      "logName": "package-test-unit"
+    },
+    {
+      "id": "package-test-e2e",
+      "category": "e2e",
+      "source": "package.json#scripts.test:e2e",
+      "command": "pnpm run 'test:e2e'",
+      "logName": "package-test-e2e"
+    },
+    {
+      "id": "package-build",
+      "category": "build",
+      "source": "package.json#scripts.build",
+      "command": "pnpm run 'build'",
+      "logName": "package-build"
+    },
+    {
+      "id": "python-ruff",
+      "category": "lint",
+      "source": "pyproject.toml (ruff)",
+      "command": "python3 -m ruff check .",
+      "logName": "python-ruff"
+    },
+    {
+      "id": "python-mypy",
+      "category": "types",
+      "source": "pyproject.toml (mypy)",
+      "command": "python3 -m mypy .",
+      "logName": "python-mypy"
+    },
+    {
+      "id": "python-pytest",
+      "category": "test",
+      "source": "pyproject.toml (pytest)",
+      "command": "python3 -m pytest",
+      "logName": "python-pytest"
+    },
+    {
+      "id": "go-vet",
+      "category": "lint",
+      "source": "go.mod",
+      "command": "go vet ./...",
+      "logName": "go-vet"
+    },
+    {
+      "id": "go-test",
+      "category": "test",
+      "source": "go.mod",
+      "command": "go test ./...",
+      "logName": "go-test"
+    },
+    {
+      "id": "cargo-fmt",
+      "category": "format",
+      "source": "Cargo.toml",
+      "command": "cargo fmt --check",
+      "logName": "cargo-fmt"
+    },
+    {
+      "id": "cargo-clippy",
+      "category": "lint",
+      "source": "Cargo.toml",
+      "command": "cargo clippy --all-targets --all-features -- -D warnings",
+      "logName": "cargo-clippy"
+    },
+    {
+      "id": "cargo-test",
+      "category": "test",
+      "source": "Cargo.toml",
+      "command": "cargo test",
+      "logName": "cargo-test"
+    },
+    {
+      "id": "shell-smoke",
+      "category": "test",
+      "source": "tests/smoke.sh",
+      "command": "bash 'tests/smoke.sh'",
+      "logName": "shell-smoke"
+    }
+  ],
+  "results": []
+}

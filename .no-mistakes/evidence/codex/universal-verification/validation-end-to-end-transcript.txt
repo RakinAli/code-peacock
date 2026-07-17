@@ -1,0 +1,110 @@
+# Universal verification runner — independent end-to-end validation
+# Branch: codex/universal-verification   Runner: scripts/project-checks.mjs
+# node v22.12.0
+
+############################################################
+# 1) PROJECT-AGNOSTIC DISCOVERY (dry-run) on a polyglot repo
+#    JS(pnpm) + Python(ruff/mypy/pytest) + Rust + Go + shell
+############################################################
+$ node scripts/project-checks.mjs --root <polyglot> --dry-run
+peacock discovered 15 project checks
+  lint    pnpm run 'lint'
+  format  pnpm run 'format:check'
+  types   pnpm run 'typecheck'
+  test    pnpm run 'test:unit'
+  e2e     pnpm run 'test:e2e'
+  build   pnpm run 'build'
+  lint    python3 -m ruff check .
+  types   python3 -m mypy .
+  test    python3 -m pytest
+  lint    go vet ./...
+  test    go test ./...
+  format  cargo fmt --check
+  lint    cargo clippy --all-targets --all-features -- -D warnings
+  test    cargo test
+  test    bash 'tests/smoke.sh'
+discovery evidence -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-validate.lukZhK/polyglot-app/.peacock/evidence/discovery.json
+
+############################################################
+# 2) RUN-THROUGH-FAILURE + SECRET REDACTION (real run)
+#    lint passes, typecheck FAILS mid-suite, tests continue,
+#    custom check emits a secret split across a chunk boundary
+############################################################
+$ DEPLOY_API_TOKEN=<secret> node scripts/project-checks.mjs --root <app>
+peacock discovered 5 project checks
+  lint    npm run 'lint'
+  types   npm run 'typecheck'
+  test    npm run 'test:unit'
+  e2e     npm run 'test:e2e'
+  custom  node -e "const k=process.env.DEPLOY_API_TOKEN; process.stdout.write('connecting with token '+k.slice(0,6)); setTimeout(()=>process.stdout.write(k.slice(6)+'\n done\n'), 30)"
+
+[lint] npm run 'lint'
+
+> lint
+> node -e "console.log('eslint: 0 problems')"
+
+eslint: 0 problems
+
+[types] npm run 'typecheck'
+
+> typecheck
+> node -e "console.error('src/index.ts(12,5): error TS2322: Type string is not assignable to type number'); process.exit(2)"
+
+src/index.ts(12,5): error TS2322: Type string is not assignable to type number
+
+[test] npm run 'test:unit'
+
+> test:unit
+> node -e "console.log('vitest: 8 passed')"
+
+vitest: 8 passed
+
+[e2e] npm run 'test:e2e'
+
+> test:e2e
+> node -e "console.log('playwright: 3 passed')"
+
+playwright: 3 passed
+
+[custom] node -e "const k=process.env.DEPLOY_API_TOKEN; process.stdout.write('connecting with token '+k.slice(0,6)); setTimeout(()=>process.stdout.write(k.slice(6)+'\n done\n'), 30)"
+connecting with token tkn_live_9f83Hq2ZxsecretVALUE42
+ done
+
+project checks: failed -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-validate.lukZhK/runnable-app/.peacock/evidence/checks.json
+runner exit code: 1
+
+# --- persisted redacted log for the secret-emitting check ---
+$ cat .peacock/evidence/logs/deploy-smoke.log
+$ node -e "const k=process.env.DEPLOY_API_TOKEN; process.stdout.write('connecting with token '+k.slice(0,6)); setTimeout(()=>process.stdout.write(k.slice(6)+'\n done\n'), 30)"
+
+connecting with token [REDACTED]
+ done
+
+# --- persisted log for the FAILING typecheck (complete, kept despite failure) ---
+$ cat .peacock/evidence/logs/package-typecheck.log
+$ npm run 'typecheck'
+
+
+> typecheck
+> node -e "console.error('src/index.ts(12,5): error TS2322: Type string is not assignable to type number'); process.exit(2)"
+
+src/index.ts(12,5): error TS2322: Type string is not assignable to type number
+
+# --- grep the whole evidence tree for the raw secret value ---
+$ grep -R 'tkn_live_9f83Hq2ZxsecretVALUE42' .peacock/evidence
+(no match) -> secret value never persisted to evidence
+$ grep -R 'tkn_live' .peacock/evidence   # even a partial fragment?
+(no match) -> not even a partial fragment leaked
+
+############################################################
+# 3) SELF-HOSTING: runner points at the Peacock repo itself
+############################################################
+$ node scripts/project-checks.mjs --root <peacock-repo> --out <tmp>
+peacock discovered 1 project check
+  test    bash 'tests/project-checks.sh'
+
+[test] bash 'tests/project-checks.sh'
+project-checks: ALL PASS
+
+project checks: passed -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-validate.lukZhK/self-evidence2/checks.json
+runner exit code: 0
