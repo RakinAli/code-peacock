@@ -6,6 +6,7 @@ import { spawn, spawnSync } from "node:child_process";
 import { createWriteStream, existsSync } from "node:fs";
 import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { StringDecoder } from "node:string_decoder";
 
 const HELP = `Usage: node project-checks.mjs [options]
 
@@ -351,8 +352,8 @@ function createLogWriter(stream, secrets) {
   let buffer = "";
   const tailLength = Math.max(0, ...secrets.map((secret) => secret.length - 1));
   return {
-    write(chunk) {
-      buffer += chunk.toString("utf8");
+    write(text) {
+      buffer += text;
       let cutoff = Math.max(0, buffer.length - tailLength);
       for (const secret of secrets) {
         const start = buffer.lastIndexOf(secret, cutoff - 1);
@@ -375,15 +376,17 @@ async function runCheck(check, projectRoot, logsDirectory) {
   const logWriter = createLogWriter(logStream, secretValues(process.env));
   logWriter.write(`$ ${check.command}\n\n`);
   process.stdout.write(`\n[${check.category}] ${check.command}\n`);
+  const stdoutDecoder = new StringDecoder("utf8");
+  const stderrDecoder = new StringDecoder("utf8");
   const exitCode = await new Promise((resolve) => {
     const child = spawn(check.command, { cwd: projectRoot, env: process.env, shell: true });
     child.stdout.on("data", (chunk) => {
       process.stdout.write(chunk);
-      logWriter.write(chunk);
+      logWriter.write(stdoutDecoder.write(chunk));
     });
     child.stderr.on("data", (chunk) => {
       process.stderr.write(chunk);
-      logWriter.write(chunk);
+      logWriter.write(stderrDecoder.write(chunk));
     });
     child.on("error", (error) => {
       logWriter.write(`\n${error.stack ?? error}\n`);
@@ -391,6 +394,8 @@ async function runCheck(check, projectRoot, logsDirectory) {
     });
     child.on("close", (code) => resolve(code ?? FAILED_EXIT_CODE));
   });
+  logWriter.write(stdoutDecoder.end());
+  logWriter.write(stderrDecoder.end());
   await logWriter.end();
   return {
     ...check,
