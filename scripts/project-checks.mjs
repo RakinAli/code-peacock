@@ -360,9 +360,15 @@ function createLogWriter(stream, secrets) {
     write(text) {
       buffer += text;
       let cutoff = Math.max(0, buffer.length - tailLength);
-      for (const secret of secrets) {
-        const start = buffer.lastIndexOf(secret, cutoff - 1);
-        if (start >= 0 && start + secret.length > cutoff) cutoff = start;
+      for (let changed = true; changed; ) {
+        changed = false;
+        for (const secret of secrets) {
+          const start = buffer.lastIndexOf(secret, cutoff - 1);
+          if (start >= 0 && start < cutoff && start + secret.length > cutoff) {
+            cutoff = start;
+            changed = true;
+          }
+        }
       }
       stream.write(redactSecrets(buffer.slice(0, cutoff), secrets));
       buffer = buffer.slice(cutoff);
