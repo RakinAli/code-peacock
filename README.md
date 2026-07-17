@@ -1,5 +1,9 @@
 # code-peacock 🦚
 
+<p align="center">
+  <img src="skills/peacock/assets/peacock-mascot.png" alt="Peacock with seven checked verification feathers" width="260">
+</p>
+
 **Stop clicking through your own app to check UI changes. Stop babysitting your own PRs.**
 
 Peacock is an install-once, run-anywhere verification skill for **Claude Code** and
@@ -14,14 +18,15 @@ threads, rebasing when the base moves, and re-requesting review.
 is always a human decision, and no vector (interactive, per-PR CI, or the hosted
 autopilot) can make peacock merge on its own. See [Never merges](#peacock-never-merges).
 
-```
-    @ . @
-  @ \ | / @
-   \ \|/ /
-    ,(o)>
-    // \\
-   ^^   ^^
-  P E A C O C K — strutting your code. Go touch grass.
+```text
+       .  .  .
+    .  [v][v]  .
+  [v][v][v][v][v]
+      \\  |  /
+       ,(o)>
+      / /\\
+     _/  \\_
+  P E A C O C K — evidence, not vibes.
 ```
 
 ## What one run does
@@ -85,7 +90,7 @@ A human always makes the final merge decision.
 ```
 
 Then, on any branch: `/peacock` — or `/peacock 42` to run everything inside existing
-PR #42.
+PR #42. The command is **peacock** (not `peakcock`).
 
 ## Install — Codex CLI
 
@@ -95,8 +100,10 @@ bash ~/code-peacock/scripts/install-codex.sh
 ```
 
 The installer adds a first-class `$peacock` skill and keeps `/peacock` as a compatible
-custom prompt. Re-run it after pulling updates. Then use `$peacock` in any repository,
-or `/peacock 42` for an existing PR. Headless:
+custom prompt. Re-run it after pulling updates. Then open Codex in any repository and
+type `$peacock`. For an existing PR, say `$peacock on PR 42` or use `/peacock 42`.
+The `$` form is the native Codex invocation; `/peacock` is native in Claude Code.
+Headless:
 
 ```bash
 codex exec --full-auto "$(cat ~/.codex/prompts/peacock.md) -- PR mode on PR #42"
@@ -224,6 +231,8 @@ pages and report what needs login.
 ```
 .claude-plugin/        plugin + marketplace manifests (Claude Code)
 skills/peacock/        THE pipeline (SKILL.md, single source of truth) + rulebooks:
+  assets/peacock-mascot.png     generated report + skill icon
+  assets/report-theme.css       accessible evidence-report design system
   references/clean-code.md      the ruthless lint rules
   references/laws-of-ux.md      UX laws as review lenses
   references/ui-conventions.md  frontend conventions checklist

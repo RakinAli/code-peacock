@@ -1,6 +1,9 @@
 interface:
   display_name: "Peacock"
   short_description: "Verify code, browser flows, and PR evidence"
+  icon_small: "./assets/peacock-mascot.png"
+  icon_large: "./assets/peacock-mascot.png"
+  brand_color: "#087F78"
   default_prompt: "Use $peacock to autonomously verify this branch end to end and leave the PR green for human review."
 policy:
   allow_implicit_invocation: false

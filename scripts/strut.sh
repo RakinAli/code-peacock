@@ -1,80 +1,92 @@
 #!/usr/bin/env bash
-# Peacock strut — announces a pipeline run.
-# In a real terminal: an in-place animated bounce across the screen.
-# When output is piped (e.g. captured by an agent): a short cascading strut,
-# because cursor-movement codes would garble captured output.
+# Peacock strut — a zero-dependency terminal mascot for pipeline startup.
 set -euo pipefail
 
-BIRD=(
-'    @ . @    '
-'  @ \ | / @  '
-'   \ \|/ /   '
-'    ,(o)>    '
-'    // \\    '
-'   ^^   ^^   '
+readonly BIRD_WIDTH=25
+readonly FRAME_DELAY_SECONDS='0.08'
+readonly FRAME_COUNT=24
+readonly -a FAN_COLORS=(36 32 34 35 36 32 34)
+readonly -a BIRD=(
+'       .  .  .       '
+'    .  [v][v]  .    '
+'  [v][v][v][v][v]  '
+'      \\  |  /      '
+'       ,(o)>         '
+'      / /\\         '
+'     _/  \\_        '
 )
-BIRD_WIDTH=13
-BIRD_HEIGHT=${#BIRD[@]}
+readonly BIRD_HEIGHT=${#BIRD[@]}
 
-use_color() { [ -t 1 ] && [ -z "${NO_COLOR:-}" ]; }
+can_animate() {
+  [ -t 1 ] &&
+    [ "${TERM:-dumb}" != 'dumb' ] &&
+    [ -z "${CI:-}" ] &&
+    [ "${PEACOCK_ANIMATION:-1}" != '0' ]
+}
 
-# Peacock plumage: cyan, green, blue, magenta — shifted every frame for shimmer.
-FAN_COLORS=(36 32 34 35)
-BODY_COLOR='1;36'
+can_color() {
+  [ -t 1 ] && [ "${TERM:-dumb}" != 'dumb' ] && [ -z "${NO_COLOR:-}" ]
+}
 
-print_bird() { # $1 = left offset, $2 = color phase
-  local offset=$1 phase=$2 pad line i color
-  pad=$(printf '%*s' "$offset" '')
-  for i in "${!BIRD[@]}"; do
-    line="${BIRD[$i]}"
-    if use_color; then
-      if [ "$i" -lt 3 ]; then
-        color="${FAN_COLORS[$(((i + phase) % 4))]}"
-      else
-        color="$BODY_COLOR"
-      fi
-      printf '%s\033[%sm%s\033[0m\n' "$pad" "$color" "$line"
-    else
-      printf '%s%s\n' "$pad" "$line"
+print_line() {
+  local padding=$1 color=$2 line=$3
+  if can_color; then
+    printf '%s\033[%sm%s\033[0m\n' "$padding" "$color" "$line"
+    return
+  fi
+  printf '%s%s\n' "$padding" "$line"
+}
+
+print_bird() {
+  local offset=$1 color_phase=$2 padding line_index color
+  padding=$(printf '%*s' "$offset" '')
+  for line_index in "${!BIRD[@]}"; do
+    color='1;36'
+    if [ "$line_index" -lt 3 ]; then
+      color="${FAN_COLORS[$(((line_index + color_phase) % ${#FAN_COLORS[@]}))]}"
     fi
+    print_line "$padding" "$color" "${BIRD[$line_index]}"
   done
 }
 
-strut_tty() {
-  local cols frames travel offset bob f
-  cols=$(tput cols 2>/dev/null || echo 80)
-  travel=$((cols - BIRD_WIDTH - 2))
-  [ "$travel" -lt 10 ] && travel=10
-  frames=28
+restore_cursor() {
+  tput cnorm 2>/dev/null || true
+}
+
+strut() {
+  local columns travel frame offset bob
+  columns=$(tput cols 2>/dev/null || printf '80')
+  travel=$((columns - BIRD_WIDTH - 2))
+  [ "$travel" -lt 8 ] && travel=8
+
   tput civis 2>/dev/null || true
-  trap 'tput cnorm 2>/dev/null || true' EXIT
-  for ((f = 0; f < frames; f++)); do
-    # Triangle wave: strut right, then strut back.
-    offset=$((f * 2 * travel / frames))
+  trap restore_cursor EXIT INT TERM
+  for ((frame = 0; frame < FRAME_COUNT; frame++)); do
+    offset=$((frame * 2 * travel / FRAME_COUNT))
     [ "$offset" -gt "$travel" ] && offset=$((2 * travel - offset))
-    bob=$((f % 2))
-    [ "$bob" -eq 1 ] && echo
-    print_bird "$offset" "$f"
-    [ "$bob" -eq 0 ] && echo
-    sleep 0.09
+    bob=$((frame % 2))
+    [ "$bob" -eq 1 ] && printf '\n'
+    print_bird "$offset" "$frame"
+    [ "$bob" -eq 0 ] && printf '\n'
+    sleep "$FRAME_DELAY_SECONDS"
     printf '\033[%dA' $((BIRD_HEIGHT + 1))
   done
   printf '\033[%dB' $((BIRD_HEIGHT + 1))
+  restore_cursor
+  trap - EXIT INT TERM
 }
 
-strut_piped() {
-  local offsets=(1 9 17 25 17 9 1) f
-  for f in "${!offsets[@]}"; do
-    print_bird "${offsets[$f]}" "$f"
-    echo
-    sleep 0.12
-  done
+print_wordmark() {
+  if can_color; then
+    printf '\033[1;36m  P E A C O C K\033[0m  \033[2m— evidence, not vibes.\033[0m\n'
+    return
+  fi
+  printf '  P E A C O C K  — evidence, not vibes.\n'
 }
 
-if [ -t 1 ]; then strut_tty; else strut_piped; fi
-
-if use_color; then
-  printf '\033[1;36m  P E A C O C K\033[0m  \033[2m— strutting your code. Go touch grass.\033[0m\n'
+if can_animate; then
+  strut
 else
-  printf '  P E A C O C K  — strutting your code. Go touch grass.\n'
+  print_bird 0 0
 fi
+print_wordmark

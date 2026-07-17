@@ -314,6 +314,14 @@ Produce a single self-contained HTML report:
    Reference images/videos by relative path while authoring.
    Build the test/check table from `.peacock/evidence/checks.json`; link each row to its
    log. Never replace a missing manifest with an unsupported "all checks pass" claim.
+   Use the bundled `${CLAUDE_PLUGIN_ROOT}/skills/peacock/assets/report-theme.css` as the
+   report's inline `<style>` block and copy
+   `${CLAUDE_PLUGIN_ROOT}/skills/peacock/assets/peacock-mascot.png` beside the report for
+   the header image. Use the supplied `peacock-*` classes: the report should feel like a
+   compact verification field notebook, with a large verdict, scan-friendly evidence
+   cards, check table, and paired capture gallery. Preserve semantic headings, tables,
+   visible focus states, responsive layout, and reduced-motion behavior. Do not replace
+   the theme with generic dashboard styling.
 2. Inline all assets to make it self-contained:
    `node "${CLAUDE_PLUGIN_ROOT}/scripts/inline-assets.mjs" <report.html>` — this
    rewrites `<img>`/`<video>` sources to data URIs (and warns when a video is too big

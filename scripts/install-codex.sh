@@ -13,7 +13,7 @@ PROMPTS_DIR="$CODEX_ROOT/prompts"
 TARGET="$PROMPTS_DIR/peacock.md"
 SKILL_TARGET="$CODEX_ROOT/skills/peacock"
 
-mkdir -p "$PROMPTS_DIR" "$SKILL_TARGET/references" "$SKILL_TARGET/agents"
+mkdir -p "$PROMPTS_DIR" "$SKILL_TARGET/references" "$SKILL_TARGET/agents" "$SKILL_TARGET/assets"
 # Render every agent-readable Markdown file because Codex does not provide
 # Claude's plugin-root substitution.
 for REFERENCE in "$PEACOCK_HOME"/skills/peacock/references/*.md; do
@@ -22,6 +22,7 @@ for REFERENCE in "$PEACOCK_HOME"/skills/peacock/references/*.md; do
     > "$SKILL_TARGET/references/$(basename "$REFERENCE")"
 done
 cp "$PEACOCK_HOME/skills/peacock/agents/openai.yaml" "$SKILL_TARGET/agents/openai.yaml"
+cp "$PEACOCK_HOME"/skills/peacock/assets/* "$SKILL_TARGET/assets/"
 
 SOURCE="$(<"$SKILL")"
 printf '%s\n' "${SOURCE//\$\{CLAUDE_PLUGIN_ROOT\}/$PEACOCK_HOME}" > "$SKILL_TARGET/SKILL.md"
