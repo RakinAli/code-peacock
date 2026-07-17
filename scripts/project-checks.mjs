@@ -271,8 +271,9 @@ async function discoverConventionalChecks(projectRoot) {
 }
 
 async function discoverDotnetChecks(projectRoot) {
-  const entries = await readdir(projectRoot);
-  const projectFile = entries.find((entry) => entry.endsWith(".sln") || entry.endsWith(".csproj"));
+  const entries = (await readdir(projectRoot)).sort();
+  const projectFile = entries.find((entry) => entry.endsWith(".sln")) ??
+    entries.find((entry) => entry.endsWith(".csproj"));
   if (!projectFile) return [];
   return [{ id: "dotnet-test", category: "test", source: projectFile, command: `dotnet test ${shellQuote(projectFile)}` }];
 }
@@ -479,11 +480,6 @@ async function main() {
     throw new Error("--out must be a dedicated evidence directory, not the project root, an ancestor, or the filesystem root");
   }
   await mkdir(outputDirectory, { recursive: true });
-  if (!flags["dry-run"]) {
-    await rm(manifestFile, { force: true });
-    await rm(discoveryFile, { force: true });
-    await rm(logsDirectory, { force: true, recursive: true });
-  }
   const config = await loadConfig(configFile);
   const skippedCategories = config.checks?.skip ?? [];
   const checks = await discoverChecks(projectRoot, config);
@@ -494,6 +490,9 @@ async function main() {
     console.log(`discovery evidence -> ${discoveryFile}`);
     return;
   }
+  await rm(manifestFile, { force: true });
+  await rm(discoveryFile, { force: true });
+  await rm(logsDirectory, { force: true, recursive: true });
   await mkdir(logsDirectory, { recursive: true });
   const results = [];
   await writeManifest(manifestFile, projectRoot, "running", checks, results, skippedCategories);
