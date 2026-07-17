@@ -51,6 +51,13 @@ if node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PASS_PROJECT" --out .. 
   echo "ancestor output directory was accepted" >&2
   exit 1
 fi
+cp "$PASS_PROJECT/.peacock/evidence/checks.json" "$PASS_PROJECT/preserved-checks.json"
+printf '{ invalid json\n' > "$PASS_PROJECT/peacock.config.json"
+if node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PASS_PROJECT" >/dev/null 2>&1; then
+  echo "malformed configuration was accepted" >&2
+  exit 1
+fi
+cmp "$PASS_PROJECT/preserved-checks.json" "$PASS_PROJECT/.peacock/evidence/checks.json"
 
 FAIL_PROJECT="$TEST_ROOT/fail"
 mkdir -p "$FAIL_PROJECT"
@@ -104,5 +111,17 @@ node -e '
   const discovery = require(process.argv[1]);
   if (discovery.discovered.length !== 0) throw new Error("dependency-only Python tools are not configured checks");
 ' "$PYTHON_PROJECT/.peacock/evidence/discovery.json"
+
+DOTNET_PROJECT="$TEST_ROOT/dotnet"
+mkdir -p "$DOTNET_PROJECT"
+touch "$DOTNET_PROJECT/Zebra.csproj" "$DOTNET_PROJECT/Alpha.sln"
+node "$REPO_ROOT/scripts/project-checks.mjs" --root "$DOTNET_PROJECT" --dry-run >/dev/null
+node -e '
+  const discovery = require(process.argv[1]);
+  const [dotnetCheck] = discovery.discovered;
+  if (dotnetCheck?.source !== "Alpha.sln") {
+    throw new Error(`expected solution-level check: ${JSON.stringify(discovery.discovered)}`);
+  }
+' "$DOTNET_PROJECT/.peacock/evidence/discovery.json"
 
 echo "project-checks: ALL PASS"
