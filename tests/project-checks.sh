@@ -22,14 +22,14 @@ cat > "$PASS_PROJECT/peacock.config.json" <<'JSON'
 {
   "checks": {
     "commands": [
-      { "name": "secret-redaction", "command": "node -e \"const value=process.env.PEACOCK_TEST_SECRET; process.stdout.write(value.slice(0,5)); setTimeout(() => process.stdout.write(value.slice(5)), 25)\"" }
+      { "name": "secret-redaction", "command": "node -e \"const value=process.env.PEACOCK_SIGNING_KEY; process.stdout.write(value.slice(0,5)); setTimeout(() => process.stdout.write(value.slice(5)), 25)\"" }
     ],
     "skip": ["build"]
   }
 }
 JSON
 
-PEACOCK_TEST_SECRET="super-secret-value" node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PASS_PROJECT" >/dev/null
+PEACOCK_SIGNING_KEY="super-secret-value" node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PASS_PROJECT" >/dev/null
 test ! -e "$PASS_PROJECT/.peacock/evidence/logs/stale.log"
 if grep -R -q "super-secret-value" "$PASS_PROJECT/.peacock/evidence"; then
   echo "secret value leaked into evidence logs" >&2
@@ -47,6 +47,10 @@ cp "$PASS_PROJECT/.peacock/evidence/checks.json" "$PASS_PROJECT/completed-checks
 node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PASS_PROJECT" --dry-run >/dev/null
 cmp "$PASS_PROJECT/completed-checks.json" "$PASS_PROJECT/.peacock/evidence/checks.json"
 test -f "$PASS_PROJECT/.peacock/evidence/discovery.json"
+if node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PASS_PROJECT" --out .. >/dev/null 2>&1; then
+  echo "ancestor output directory was accepted" >&2
+  exit 1
+fi
 
 FAIL_PROJECT="$TEST_ROOT/fail"
 mkdir -p "$FAIL_PROJECT"

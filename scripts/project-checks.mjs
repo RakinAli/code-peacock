@@ -41,7 +41,7 @@ const PYTHON_CONFIG_MARKERS = {
 const CHECKS_MANIFEST_VERSION = 1;
 const FAILED_EXIT_CODE = 1;
 const USAGE_EXIT_CODE = 2;
-const SECRET_ENV_NAME = /(TOKEN|SECRET|PASSWORD|PASS|API_KEY|PRIVATE_KEY|CREDENTIAL)/i;
+const SECRET_ENV_NAME = /(TOKEN|SECRET|PASSWORD|PASS|KEY|CREDENTIAL)/i;
 const MIN_SECRET_LENGTH = 8;
 
 function parseArgs(argumentsList) {
@@ -335,6 +335,11 @@ function safeFileName(identifier) {
   return identifier.replace(/[^a-zA-Z0-9.-]+/g, "-");
 }
 
+function isAncestorPath(candidate, target) {
+  const relative = path.relative(candidate, target);
+  return Boolean(relative) && !relative.startsWith("..") && !path.isAbsolute(relative);
+}
+
 function secretValues(environment) {
   return Object.entries(environment)
     .filter(([name, value]) => SECRET_ENV_NAME.test(name) && value?.length >= MIN_SECRET_LENGTH)
@@ -441,8 +446,11 @@ async function main() {
   const logsDirectory = path.join(outputDirectory, "logs");
   const manifestFile = path.join(outputDirectory, "checks.json");
   const discoveryFile = path.join(outputDirectory, "discovery.json");
-  if (outputDirectory === projectRoot || outputDirectory === path.parse(outputDirectory).root) {
-    throw new Error("--out must be a dedicated evidence directory, not the project or filesystem root");
+  const isUnsafeOutput = outputDirectory === projectRoot ||
+    outputDirectory === path.parse(outputDirectory).root ||
+    isAncestorPath(outputDirectory, projectRoot);
+  if (isUnsafeOutput) {
+    throw new Error("--out must be a dedicated evidence directory, not the project root, an ancestor, or the filesystem root");
   }
   await mkdir(outputDirectory, { recursive: true });
   if (!flags["dry-run"]) {
