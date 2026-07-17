@@ -394,13 +394,15 @@ async function main() {
     throw new Error("--out must be a dedicated evidence directory, not the project or filesystem root");
   }
   await mkdir(outputDirectory, { recursive: true });
-  await rm(manifestFile, { force: true });
+  if (!flags["dry-run"]) {
+    await rm(manifestFile, { force: true });
+    await rm(logsDirectory, { force: true, recursive: true });
+  }
   const config = await loadConfig(configFile);
   const skippedCategories = config.checks?.skip ?? [];
   const checks = await discoverChecks(projectRoot, config);
   console.log(`peacock discovered ${checks.length} project check${checks.length === 1 ? "" : "s"}`);
   for (const check of checks) console.log(`  ${check.category.padEnd(7)} ${check.command}`);
-  await rm(logsDirectory, { force: true, recursive: true });
   if (flags["dry-run"]) {
     await writeManifest(manifestFile, projectRoot, "dry-run", checks, [], skippedCategories);
     console.log(`discovery evidence -> ${manifestFile}`);
