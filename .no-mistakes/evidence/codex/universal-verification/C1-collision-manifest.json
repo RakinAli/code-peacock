@@ -1,0 +1,57 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-17T15:46:04.648Z",
+  "projectRoot": "/var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-demo.klmmiw/collision",
+  "status": "passed",
+  "summary": {
+    "total": 2,
+    "passed": 2,
+    "failed": 0,
+    "skipped": 0
+  },
+  "configuration": {
+    "skippedCategories": []
+  },
+  "discovered": [
+    {
+      "id": "unit/api",
+      "category": "custom",
+      "source": "peacock.config.json",
+      "command": "node -e \"console.log('EVIDENCE FROM: unit/api check')\"",
+      "logName": "unit-api"
+    },
+    {
+      "id": "unit api",
+      "category": "custom",
+      "source": "peacock.config.json",
+      "command": "node -e \"console.log('EVIDENCE FROM: unit api check')\"",
+      "logName": "unit-api-2"
+    }
+  ],
+  "results": [
+    {
+      "id": "unit/api",
+      "category": "custom",
+      "source": "peacock.config.json",
+      "command": "node -e \"console.log('EVIDENCE FROM: unit/api check')\"",
+      "logName": "unit-api",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T15:46:04.562Z",
+      "durationMs": 44,
+      "log": "logs/unit-api.log"
+    },
+    {
+      "id": "unit api",
+      "category": "custom",
+      "source": "peacock.config.json",
+      "command": "node -e \"console.log('EVIDENCE FROM: unit api check')\"",
+      "logName": "unit-api-2",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T15:46:04.607Z",
+      "durationMs": 41,
+      "log": "logs/unit-api-2.log"
+    }
+  ]
+}

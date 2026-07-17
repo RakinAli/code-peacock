@@ -222,6 +222,8 @@ skills/peacock/        THE pipeline (SKILL.md, single source of truth) + ruleboo
   references/laws-of-ux.md      UX laws as review lenses
   references/ui-conventions.md  frontend conventions checklist
   references/pr-style.md        PR bodies, commits, and review replies — human voice
+  references/project-checks.md  cross-stack check discovery guide
+  agents/openai.yaml            Codex skill interface metadata
 scripts/strut.sh                the mascot
 scripts/ui-capture.mjs          Playwright captures (screenshots, states, videos, a11y)
 scripts/project-checks.mjs      cross-stack check discovery + durable evidence logs
@@ -229,7 +231,7 @@ scripts/inline-assets.mjs       makes the HTML report self-contained
 scripts/pr-threads.mjs          list/reply/resolve PR review threads (GraphQL via gh)
 scripts/merge-killswitch.sh     gh/git PATH shims that block every merge vector
 scripts/peacock-autopilot.sh    hosted, unattended runner — reviews open PRs, never merges
-scripts/install-codex.sh        renders the pipeline as a Codex CLI prompt
+scripts/install-codex.sh        renders the pipeline as a Codex skill + /peacock prompt
 templates/peacock.yml           GitHub Actions workflow — per-PR headless runs
 templates/peacock-scheduled.yml GitHub Actions workflow — scheduled autopilot
 tests/project-checks.sh         contract tests for discovery, failures, and evidence

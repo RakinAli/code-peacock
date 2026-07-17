@@ -1,0 +1,39 @@
+=== $ node scripts/project-checks.mjs --root checkout-service ===
+peacock discovered 4 project checks
+  lint    npm run 'lint'
+  types   npm run 'typecheck'
+  test    npm run 'test:unit'
+  build   npm run 'build'
+
+[lint] npm run 'lint'
+
+> lint
+> node -e "console.log('eslint: 0 problems')"
+
+eslint: 0 problems
+
+[types] npm run 'typecheck'
+
+> typecheck
+> node -e "console.error('src/cart.ts(42,7): error TS2322: Type string is not assignable to type number'); process.exit(2)"
+
+src/cart.ts(42,7): error TS2322: Type string is not assignable to type number
+
+[test] npm run 'test:unit'
+
+> test:unit
+> node -e "console.log('Test Files  3 passed (3)\nTests  17 passed (17)')"
+
+Test Files  3 passed (3)
+Tests  17 passed (17)
+
+[build] npm run 'build'
+
+> build
+> node -e "console.log('build: bundled dist/ in 812ms')"
+
+build: bundled dist/ in 812ms
+
+project checks: failed -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-demo.klmmiw/checkout-service/.peacock/evidence/checks.json
+
+runner process exit code = 1   (nonzero => at least one check failed; suite still ran every check)

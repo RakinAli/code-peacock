@@ -1,0 +1,53 @@
+############################################################
+# BEFORE FIX (parent of 574badf): colliding log filenames  #
+############################################################
+$ node project-checks.old.mjs --root collision
+  peacock discovered 2 project checks
+    custom  node -e "console.log('EVIDENCE FROM: unit/api check')"
+    custom  node -e "console.log('EVIDENCE FROM: unit api check')"
+  
+  [custom] node -e "console.log('EVIDENCE FROM: unit/api check')"
+  EVIDENCE FROM: unit/api check
+  
+  [custom] node -e "console.log('EVIDENCE FROM: unit api check')"
+  EVIDENCE FROM: unit api check
+  
+  project checks: passed -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-demo.klmmiw/collision/.peacock/evidence/checks.json
+
+log files written (BEFORE): unit-api.log 
+unit-api.log content (BEFORE) -- only ONE check's evidence survives:
+  $ node -e "console.log('EVIDENCE FROM: unit api check')"
+  
+  EVIDENCE FROM: unit api check
+
+############################################################
+# AFTER FIX (current bd6d76b): distinct log filenames      #
+############################################################
+$ node scripts/project-checks.mjs --root collision
+  peacock discovered 2 project checks
+    custom  node -e "console.log('EVIDENCE FROM: unit/api check')"
+    custom  node -e "console.log('EVIDENCE FROM: unit api check')"
+  
+  [custom] node -e "console.log('EVIDENCE FROM: unit/api check')"
+  EVIDENCE FROM: unit/api check
+  
+  [custom] node -e "console.log('EVIDENCE FROM: unit api check')"
+  EVIDENCE FROM: unit api check
+  
+  project checks: passed -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-demo.klmmiw/collision/.peacock/evidence/checks.json
+
+log files written (AFTER): unit-api-2.log unit-api.log 
+
+each check's evidence is preserved in its own log:
+  --- unit-api-2.log ---
+    $ node -e "console.log('EVIDENCE FROM: unit api check')"
+    
+    EVIDENCE FROM: unit api check
+  --- unit-api.log ---
+    $ node -e "console.log('EVIDENCE FROM: unit/api check')"
+    
+    EVIDENCE FROM: unit/api check
+
+manifest records distinct log paths per check:
+  unit/api   -> logs/unit-api.log
+  unit api   -> logs/unit-api-2.log
