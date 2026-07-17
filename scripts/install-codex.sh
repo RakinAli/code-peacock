@@ -1,18 +1,31 @@
 #!/usr/bin/env bash
-# Installs /peacock as a Codex CLI custom prompt.
-# Renders the canonical pipeline (skills/peacock/SKILL.md) into
-# ~/.codex/prompts/peacock.md with this checkout's absolute path baked in,
-# so Codex can find the bundled scripts and rulebooks.
+# Installs Peacock as a first-class Codex skill and a backwards-compatible
+# /peacock custom prompt. Both are rendered from the canonical SKILL.md with
+# this checkout's absolute path baked in.
 #
 # Re-run after every `git pull` of this repo to pick up pipeline changes.
 set -euo pipefail
 
 PEACOCK_HOME="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SKILL="$PEACOCK_HOME/skills/peacock/SKILL.md"
-PROMPTS_DIR="${CODEX_HOME:-$HOME/.codex}/prompts"
+CODEX_ROOT="${CODEX_HOME:-$HOME/.codex}"
+PROMPTS_DIR="$CODEX_ROOT/prompts"
 TARGET="$PROMPTS_DIR/peacock.md"
+SKILL_TARGET="$CODEX_ROOT/skills/peacock"
 
-mkdir -p "$PROMPTS_DIR"
+mkdir -p "$PROMPTS_DIR" "$SKILL_TARGET/references" "$SKILL_TARGET/agents"
+# Render every agent-readable Markdown file because Codex does not provide
+# Claude's plugin-root substitution.
+for REFERENCE in "$PEACOCK_HOME"/skills/peacock/references/*.md; do
+  REFERENCE_SOURCE="$(<"$REFERENCE")"
+  printf '%s\n' "${REFERENCE_SOURCE//\$\{CLAUDE_PLUGIN_ROOT\}/$PEACOCK_HOME}" \
+    > "$SKILL_TARGET/references/$(basename "$REFERENCE")"
+done
+cp "$PEACOCK_HOME/skills/peacock/agents/openai.yaml" "$SKILL_TARGET/agents/openai.yaml"
+
+SOURCE="$(<"$SKILL")"
+printf '%s\n' "${SOURCE//\$\{CLAUDE_PLUGIN_ROOT\}/$PEACOCK_HOME}" > "$SKILL_TARGET/SKILL.md"
+
 # Drop the YAML frontmatter (Claude Code metadata), then bake in the install path.
 # The substitution uses bash string replacement, not sed, so paths containing
 # sed-special characters (&, |, \) survive intact.
@@ -25,7 +38,8 @@ BODY="$(awk 'NR==1 && /^---$/ {inFrontmatter=1; next} inFrontmatter && /^---$/ {
   echo "Prompt arguments (a PR number selects PR mode; empty means full pipeline): \$ARGUMENTS"
 } > "$TARGET"
 
+echo "Installed Codex skill:  $SKILL_TARGET"
 echo "Installed Codex prompt: $TARGET"
 echo
-echo "Interactive:  codex  →  /peacock            (or /peacock <pr-number>)"
+echo "Interactive:  codex  →  use \$peacock        (or /peacock <pr-number>)"
 echo "Headless:     codex exec --full-auto \"\$(cat \"$TARGET\") -- run the full pipeline\""

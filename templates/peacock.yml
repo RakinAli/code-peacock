@@ -107,6 +107,7 @@ jobs:
           path: |
             .peacock/reports/
             .peacock/captures/
+            .peacock/evidence/
             !.peacock/**/auth/**
             !.peacock/**/storage-state.json
           if-no-files-found: ignore

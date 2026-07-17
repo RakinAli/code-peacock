@@ -2,7 +2,8 @@
 
 **Stop clicking through your own app to check UI changes. Stop babysitting your own PRs.**
 
-Peacock is an autonomous review pipeline that runs on **Claude Code** or **Codex CLI**.
+Peacock is an install-once, run-anywhere verification skill for **Claude Code** and
+**Codex**. It uses each repository's own toolchain instead of assuming a framework.
 Point it at a branch (or an existing PR) and walk away: it reviews the code like a
 senior dev, writes tests, enforces ruthless clean-code rules, drives a headless browser
 through your UI, judges it like a product owner, ships a human-sounding PR — and then
@@ -33,8 +34,11 @@ autopilot) can make peacock merge on its own. See [Never merges](#peacock-never-
 4. **Lints ruthlessly.** 40+ clean-code rules stricter than any ESLint config: no dead
    code, no boolean traps (`render(data, true)` — banned), no weird booleans, no magic
    numbers, no speculative abstraction. Violations get fixed.
-5. **Writes tests.** Generates tests that pin down the *intent* (happy path, edge
-   cases, failure paths), runs them plus your existing suite until green.
+5. **Proves the code path.** Generates tests that pin down the *intent* (happy path,
+   edge cases, failure paths), including behavior-level Playwright/Cypress tests for
+   changed UI flows. Then a deterministic runner discovers and executes the project's
+   lint, formatting, type, unit, E2E, and build commands across JavaScript/TypeScript,
+   Python, Go, Rust, Ruby, and .NET. Every command gets a complete evidence log.
 6. **Sees your UI so you don't have to.** Spins up your dev server, drives headless
    Chromium via Playwright, and captures every affected route: desktop + mobile
    full-page screenshots, hover/focus states, scroll-through and flow **videos**,
@@ -45,8 +49,9 @@ autopilot) can make peacock merge on its own. See [Never merges](#peacock-never-
    states? Janky motion? 43px touch targets? It shows you, with screenshots.
 8. **Judges like a product owner.** Fresh-eyes pass over the captured flows: value,
    copy, friction, what to cut.
-9. **Reports.** One self-contained HTML file (screenshots and videos embedded) with a
-   ship / fix-then-ship / rethink verdict.
+9. **Reports evidence, not vibes.** One self-contained HTML file (screenshots and videos
+   embedded) with a ship / fix-then-ship / rethink verdict, backed by a machine-readable
+   check manifest and per-command logs.
 10. **Opens a PR that reads human** — short, concrete, with the screenshots that
     matter. No AI attribution, no boilerplate — **then babysits it to green**: watches
     CI and fixes failures (up to a configurable cap), implements review feedback,
@@ -88,8 +93,9 @@ git clone https://github.com/RakinAli/code-peacock ~/code-peacock
 bash ~/code-peacock/scripts/install-codex.sh
 ```
 
-Then inside `codex`: `/peacock` (same modes). Re-run the installer after pulling
-updates. Headless:
+The installer adds a first-class `$peacock` skill and keeps `/peacock` as a compatible
+custom prompt. Re-run it after pulling updates. Then use `$peacock` in any repository,
+or `/peacock 42` for an existing PR. Headless:
 
 ```bash
 codex exec --full-auto "$(cat ~/.codex/prompts/peacock.md) -- PR mode on PR #42"
@@ -101,8 +107,9 @@ Copy `templates/peacock.yml` to `.github/workflows/peacock.yml` in your project 
 an `ANTHROPIC_API_KEY` (or `OPENAI_API_KEY`) secret. Every same-repo PR update triggers a
 full peacock pass in PR mode; commenting `peacock` on a PR (from an owner/member/
 collaborator) re-runs it. Fork PRs are skipped on purpose — they'd otherwise run
-untrusted code with your secrets. Reports and captures are uploaded as workflow
-artifacts.
+untrusted code with your secrets. Reports, captures, videos, accessibility snapshots,
+the normalized check manifest, and complete command logs are uploaded as workflow
+artifacts. Auth storage is always excluded.
 
 ## Run it autonomously (laptop off)
 
@@ -141,6 +148,12 @@ Commit a `peacock.config.json` at your repo root:
 {
   "baseUrl": "http://localhost:3000",
   "devCommand": "npm run dev",
+  "checks": {
+    "commands": [
+      { "name": "contracts", "category": "test", "command": "make contracts" }
+    ],
+    "skip": []                                                // e.g. ["build"]
+  },
   "routes": { "include": ["/pricing"], "exclude": ["/admin"] },
   "login": { "url": "/login" },
   "pr": {
@@ -153,7 +166,30 @@ Commit a `peacock.config.json` at your repo root:
 }
 ```
 
-Everything is optional; peacock detects sensible values when the file is absent.
+Everything is optional; Peacock detects sensible values when the file is absent. Custom
+check commands are additive. Skipped categories remain visible as a coverage choice in
+the report.
+
+## Deterministic check evidence
+
+The agent handles judgment-heavy work; `scripts/project-checks.mjs` handles repeatable
+execution. From any target repository it discovers the project's configured commands,
+runs all of them even when an earlier command fails, and writes:
+
+```text
+.peacock/evidence/checks.json
+.peacock/evidence/logs/<check>.log
+```
+
+The HTML report and CI artifact use those files as the source of truth. Run discovery
+without executing commands with:
+
+```bash
+node ~/code-peacock/scripts/project-checks.mjs --dry-run
+```
+
+Repository-specific commands belong in `peacock.config.json`; Peacock never silently
+turns a missing test framework into a passing result.
 
 ## Auth for protected pages
 
@@ -188,6 +224,7 @@ skills/peacock/        THE pipeline (SKILL.md, single source of truth) + ruleboo
   references/pr-style.md        PR bodies, commits, and review replies — human voice
 scripts/strut.sh                the mascot
 scripts/ui-capture.mjs          Playwright captures (screenshots, states, videos, a11y)
+scripts/project-checks.mjs      cross-stack check discovery + durable evidence logs
 scripts/inline-assets.mjs       makes the HTML report self-contained
 scripts/pr-threads.mjs          list/reply/resolve PR review threads (GraphQL via gh)
 scripts/merge-killswitch.sh     gh/git PATH shims that block every merge vector
@@ -195,6 +232,7 @@ scripts/peacock-autopilot.sh    hosted, unattended runner — reviews open PRs, 
 scripts/install-codex.sh        renders the pipeline as a Codex CLI prompt
 templates/peacock.yml           GitHub Actions workflow — per-PR headless runs
 templates/peacock-scheduled.yml GitHub Actions workflow — scheduled autopilot
+tests/project-checks.sh         contract tests for discovery, failures, and evidence
 ```
 
 ## License

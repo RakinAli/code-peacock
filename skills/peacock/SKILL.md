@@ -1,6 +1,6 @@
 ---
 name: peacock
-description: Autonomous end-to-end review pipeline. Reviews the current branch like a senior developer, generates and runs tests, enforces ruthless clean-code rules, audits UI changes in a headless browser (screenshots, hover states, videos, mobile), judges the result like a product owner against Laws of UX and frontend conventions, produces a self-contained HTML report, opens a human-sounding PR, and then babysits that PR to green with no human involved (CI fix loop, review-comment handling). It reviews and prepares — it NEVER merges; a human always makes the final merge decision. Runs interactively (/peacock), on an existing PR (/peacock <number>), or fully hosted on a schedule/VM that reviews open PRs while your machine is off. Use when the user invokes /peacock (optionally with a PR number) or asks for a full autonomous review of their changes.
+description: Autonomous end-to-end code and product verification. Reviews a branch like a senior developer, creates and runs unit and browser E2E tests, discovers lint/type/build commands across common stacks, drives the UI in Playwright, captures screenshots/videos/accessibility evidence, produces a self-contained HTML report, opens a human-sounding PR, and babysits it to green. It reviews and prepares but NEVER merges. Use when the user invokes $peacock or /peacock, supplies a PR number, asks to verify a change end to end, wants browser-tested proof that code works, or wants autonomous PR review in any repository.
 ---
 
 # Peacock — autonomous review pipeline
@@ -96,6 +96,8 @@ the gap in the report.
 - Prefer the project's own tooling (its test runner, its linter, its dev server script).
 - Everything peacock generates at runtime lives in `.peacock/` inside the target repo.
   Ensure `.peacock/` is in the repo's `.gitignore` (add it if missing).
+- Treat terminal output as transient. Preserve code-check logs, browser artifacts, and
+  the final verdict under `.peacock/` so every claim can be traced to evidence.
 - If the target repo has a `peacock.config.json`, read it first — it overrides all
   defaults below:
 
@@ -103,6 +105,10 @@ the gap in the report.
 {
   "baseUrl": "http://localhost:3000",
   "devCommand": "npm run dev",
+  "checks": {
+    "commands": [{ "name": "contracts", "category": "test", "command": "make contracts" }],
+    "skip": []
+  },
   "routes": { "include": [], "exclude": [] },       // added to / removed from detected routes
   "login": { "url": "/login", "userSelector": "", "passSelector": "", "submitSelector": "" },
   "pr": {
@@ -168,6 +174,8 @@ These rules are stricter than any ESLint config; the point is code with zero was
 - Auto-fix every violation that is safe to fix mechanically (dead code, boolean traps,
   guard clauses, naming, magic numbers). List anything you deliberately left alone and why.
 - Re-run the project's type check / build after fixing.
+- Read `${CLAUDE_PLUGIN_ROOT}/skills/peacock/references/project-checks.md`. Use the
+  bundled discovery runner instead of guessing when the repository has multiple stacks.
 
 ## Phase 4 — Tests
 
@@ -179,9 +187,18 @@ Generate tests that pin down the **intent**, not the implementation.
 2. For each changed behavior, write tests covering: the happy path, the edge cases found
    in Phase 2, and at least one failure path. Name tests after behavior ("rejects
    expired token"), never after methods ("test handleSubmit 2").
-3. Run the new tests AND the project's existing suite. On failure, decide honestly
+3. If UI behavior changed, add or update at least one behavior-level browser test in the
+   project's established Playwright/Cypress framework. Exercise the changed user journey
+   and assert its outcome. A screenshot is visual evidence, not an E2E assertion, and
+   does not replace this test. If no browser test framework exists, add the smallest
+   idiomatic Playwright setup that can run the affected flow.
+4. Run the new tests AND the project's existing suite. On failure, decide honestly
    whether the test or the code is wrong, fix that one, re-run. Cap at 5 fix iterations;
    after that, report the failure honestly instead of weakening the test to pass.
+5. Run `node "${CLAUDE_PLUGIN_ROOT}/scripts/project-checks.mjs"` from the target repo.
+   It must execute every discovered lint, format, type, unit, E2E, and build command even
+   after failures, producing `.peacock/evidence/checks.json` and complete logs. Read the
+   manifest. Treat `failed` as a blocker and `no-checks` as an explicit coverage gap.
 
 ## Phase 5 — UI capture (headless browser)
 
@@ -295,6 +312,8 @@ Produce a single self-contained HTML report:
    findings** (each with screenshot, cited law/convention, suggestion) · **Product owner
    notes** · **Not covered** (auth-blocked routes, skipped phases — never hide gaps).
    Reference images/videos by relative path while authoring.
+   Build the test/check table from `.peacock/evidence/checks.json`; link each row to its
+   log. Never replace a missing manifest with an unsupported "all checks pass" claim.
 2. Inline all assets to make it self-contained:
    `node "${CLAUDE_PLUGIN_ROOT}/scripts/inline-assets.mjs" <report.html>` — this
    rewrites `<img>`/`<video>` sources to data URIs (and warns when a video is too big
