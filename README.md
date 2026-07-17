@@ -38,7 +38,8 @@ autopilot) can make peacock merge on its own. See [Never merges](#peacock-never-
    edge cases, failure paths), including behavior-level Playwright/Cypress tests for
    changed UI flows. Then a deterministic runner discovers and executes the project's
    lint, formatting, type, unit, E2E, and build commands across JavaScript/TypeScript,
-   Python, Go, Rust, Ruby, and .NET. Every command gets a complete evidence log.
+   Python, Go, Rust, Ruby, .NET, JVM (Maven/Gradle), Swift, and Elixir — plus executable
+   `tests/*.sh` contracts. Every command gets a complete evidence log.
 6. **Sees your UI so you don't have to.** Spins up your dev server, drives headless
    Chromium via Playwright, and captures every affected route: desktop + mobile
    full-page screenshots, hover/focus states, scroll-through and flow **videos**,

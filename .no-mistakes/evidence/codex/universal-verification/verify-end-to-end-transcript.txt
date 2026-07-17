@@ -1,0 +1,104 @@
+
+========================================================================
+[1] Cross-stack discovery on a polyglot repo (JS + Python + Rust + shell)
+========================================================================
+$ node project-checks.mjs --root acme-web --dry-run
+peacock discovered 13 project checks
+  lint    pnpm run 'lint'
+  format  pnpm run 'format:check'
+  types   pnpm run 'typecheck'
+  test    pnpm run 'test:unit'
+  e2e     pnpm run 'test:e2e'
+  build   pnpm run 'build'
+  lint    python3 -m ruff check .
+  types   python3 -m mypy .
+  test    python3 -m pytest
+  format  cargo fmt --check
+  lint    cargo clippy --all-targets --all-features -- -D warnings
+  test    cargo test
+  test    bash 'tests/smoke.sh'
+discovery evidence -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-verify.cdvutQ/acme-web/.peacock/evidence/discovery.json
+(non-executable tests/_helper.sh correctly ignored; pnpm honored from packageManager)
+
+========================================================================
+[2] Real run: type check fails mid-suite; runner continues and finishes every check
+========================================================================
+$ DEPLOY_TOKEN=ghp_9f83kLmZ...  node project-checks.mjs --root checkout-service
+peacock discovered 5 project checks
+  lint    npm run 'lint'
+  types   npm run 'typecheck'
+  test    npm run 'test:unit'
+  build   npm run 'build'
+  e2e     node -e "console.log('deploying with DEPLOY_TOKEN=' + process.env.DEPLOY_TOKEN); console.log('smoke: 200 OK')"
+
+[lint] npm run 'lint'
+
+> lint
+> node -e "console.log('eslint: 0 problems')"
+
+eslint: 0 problems
+
+[types] npm run 'typecheck'
+
+> typecheck
+> node -e "console.error('src/cart.ts(42,7): error TS2322: Type number is not assignable to string'); process.exit(2)"
+
+src/cart.ts(42,7): error TS2322: Type number is not assignable to string
+
+[test] npm run 'test:unit'
+
+> test:unit
+> node -e "console.log('42 passed (42)')"
+
+42 passed (42)
+
+[build] npm run 'build'
+
+> build
+> node -e "console.log('build: compiled 128 modules')"
+
+build: compiled 128 modules
+
+[e2e] node -e "console.log('deploying with DEPLOY_TOKEN=' + process.env.DEPLOY_TOKEN); console.log('smoke: 200 OK')"
+deploying with DEPLOY_TOKEN=ghp_9f83kLmZQ2xVn7pRtWc1aB4dEeF6gH0iJ2k
+smoke: 200 OK
+
+project checks: failed -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-verify.cdvutQ/checkout-service/.peacock/evidence/checks.json
+>>> exit code: 1  (non-zero: at least one check failed)
+
+========================================================================
+[3] Machine-readable manifest preserved (status per check, even the failure)
+========================================================================
+schemaVersion: 1 status: failed summary: {"total":5,"passed":4,"failed":1,"skipped":0}
+  lint   passed exit=0  log=logs/package-lint.log
+  types  failed exit=2  log=logs/package-typecheck.log
+  test   passed exit=0  log=logs/package-test-unit.log
+  build  passed exit=0  log=logs/package-build.log
+  e2e    passed exit=0  log=logs/deploy-smoke.log
+
+========================================================================
+[4] Secret redaction: raw DEPLOY_TOKEN never lands in the persisted e2e log
+========================================================================
+--- logs/deploy-smoke.log ---
+$ node -e "console.log('deploying with DEPLOY_TOKEN=' + process.env.DEPLOY_TOKEN); console.log('smoke: 200 OK')"
+
+deploying with DEPLOY_TOKEN=[REDACTED]
+smoke: 200 OK
+OK: token absent from every manifest and log
+
+========================================================================
+[5] --dry-run is non-destructive of a completed run's evidence
+========================================================================
+OK: checks.json unchanged (47e476e5cde3470fbf5ba5a9badba9491b6afdaf); discovery.json written separately
+
+========================================================================
+[6] Self-hosting: runner points at the Peacock repo and runs its own contract
+========================================================================
+peacock discovered 1 project check
+  test    bash 'tests/project-checks.sh'
+
+[test] bash 'tests/project-checks.sh'
+project-checks: ALL PASS
+
+project checks: passed -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-verify.cdvutQ/self/evidence/checks.json
+self-host status: passed {"total":1,"passed":1,"failed":0,"skipped":0}
