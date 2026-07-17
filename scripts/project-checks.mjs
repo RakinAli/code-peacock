@@ -297,6 +297,19 @@ function uniqueChecks(checks, skippedCategories) {
   });
 }
 
+function assignLogNames(checks) {
+  const usedNames = new Set();
+  return checks.map((check) => {
+    const base = safeFileName(check.id);
+    let logName = base;
+    for (let suffix = 2; usedNames.has(logName); suffix++) {
+      logName = `${base}-${suffix}`;
+    }
+    usedNames.add(logName);
+    return { ...check, logName };
+  });
+}
+
 async function discoverChecks(projectRoot, config) {
   const detected = [
     ...(await discoverPackageChecks(projectRoot)),
@@ -306,7 +319,7 @@ async function discoverChecks(projectRoot, config) {
     ...(await discoverConventionalChecks(projectRoot)),
     ...customChecks(config),
   ];
-  return uniqueChecks(detected, new Set(config.checks?.skip ?? []));
+  return assignLogNames(uniqueChecks(detected, new Set(config.checks?.skip ?? [])));
 }
 
 function safeFileName(identifier) {
@@ -315,7 +328,7 @@ function safeFileName(identifier) {
 
 async function runCheck(check, projectRoot, logsDirectory) {
   const startedAt = new Date();
-  const logFile = path.join(logsDirectory, `${safeFileName(check.id)}.log`);
+  const logFile = path.join(logsDirectory, `${check.logName}.log`);
   const logStream = createWriteStream(logFile);
   logStream.write(`$ ${check.command}\n\n`);
   process.stdout.write(`\n[${check.category}] ${check.command}\n`);
