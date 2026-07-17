@@ -188,6 +188,11 @@ without executing commands with:
 node ~/code-peacock/scripts/project-checks.mjs --dry-run
 ```
 
+Dry-run discovery is written separately to `.peacock/evidence/discovery.json`; it never
+overwrites completed evidence. Exact values of secret-like environment variables are
+redacted from command logs before they are saved or uploaded. Commands must still avoid
+printing encoded or transformed secrets, which cannot be recognized generically.
+
 Repository-specific commands belong in `peacock.config.json`; Peacock never silently
 turns a missing test framework into a passing result.
 

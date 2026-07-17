@@ -67,6 +67,8 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: peacock-scheduled-reports
+          # Known secret env values are redacted from check logs. Commands must
+          # still avoid printing encoded or transformed secrets.
           # Exclude patterns must share the SAME absolute root as the includes.
           # actions/upload-artifact roots a bare `!**/auth/**` at the workspace,
           # not at runner.temp where these files live, so it would silently match

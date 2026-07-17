@@ -4,7 +4,7 @@
 
 import { spawn, spawnSync } from "node:child_process";
 import { createWriteStream, existsSync } from "node:fs";
-import { mkdir, readFile, readdir, rm, writeFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 const HELP = `Usage: node project-checks.mjs [options]
@@ -33,13 +33,15 @@ const PACKAGE_SCRIPT_CHECKS = [
   ["build", "build"],
 ];
 const PYTHON_CONFIG_MARKERS = {
-  lint: ["[tool.ruff", "ruff"],
-  types: ["[tool.mypy", "mypy"],
-  test: ["[tool.pytest", "pytest"],
+  lint: "[tool.ruff",
+  types: "[tool.mypy",
+  test: "[tool.pytest",
 };
 const CHECKS_MANIFEST_VERSION = 1;
 const FAILED_EXIT_CODE = 1;
 const USAGE_EXIT_CODE = 2;
+const SECRET_ENV_NAME = /(TOKEN|SECRET|PASSWORD|PASS|API_KEY|PRIVATE_KEY|CREDENTIAL)/i;
+const MIN_SECRET_LENGTH = 8;
 
 function parseArgs(argumentsList) {
   const flags = {};
@@ -195,7 +197,7 @@ async function discoverPythonChecks(projectRoot) {
     ["test", "pytest", `${python} -m pytest`],
   ];
   return definitions
-    .filter(([category]) => PYTHON_CONFIG_MARKERS[category].some((marker) => pyproject.includes(marker)))
+    .filter(([category]) => pyproject.includes(PYTHON_CONFIG_MARKERS[category]))
     .map(([category, tool, command]) => ({
       id: `python-${tool}`,
       category,
@@ -248,7 +250,13 @@ async function discoverConventionalChecks(projectRoot) {
   }
   const testsDirectory = path.join(projectRoot, "tests");
   if (existsSync(testsDirectory)) {
-    const shellTests = (await readdir(testsDirectory)).filter((entry) => entry.endsWith(".sh")).sort();
+    const entries = (await readdir(testsDirectory)).filter((entry) => entry.endsWith(".sh")).sort();
+    const shellTests = [];
+    for (const entry of entries) {
+      const file = path.join(testsDirectory, entry);
+      const fileDetails = await stat(file);
+      if (fileDetails.isFile() && fileDetails.mode & 0o111) shellTests.push(entry);
+    }
     for (const shellTest of shellTests) {
       checks.push({
         id: `shell-${shellTest.slice(0, -3)}`,
@@ -326,29 +334,64 @@ function safeFileName(identifier) {
   return identifier.replace(/[^a-zA-Z0-9.-]+/g, "-");
 }
 
+function secretValues(environment) {
+  return Object.entries(environment)
+    .filter(([name, value]) => SECRET_ENV_NAME.test(name) && value?.length >= MIN_SECRET_LENGTH)
+    .map(([, value]) => value)
+    .sort((left, right) => right.length - left.length);
+}
+
+function redactSecrets(text, secrets) {
+  let redacted = text;
+  for (const secret of secrets) redacted = redacted.replaceAll(secret, "[REDACTED]");
+  return redacted;
+}
+
+function createLogWriter(stream, secrets) {
+  let buffer = "";
+  const tailLength = Math.max(0, ...secrets.map((secret) => secret.length - 1));
+  return {
+    write(chunk) {
+      buffer += chunk.toString("utf8");
+      let cutoff = Math.max(0, buffer.length - tailLength);
+      for (const secret of secrets) {
+        const start = buffer.lastIndexOf(secret, cutoff - 1);
+        if (start >= 0 && start + secret.length > cutoff) cutoff = start;
+      }
+      stream.write(redactSecrets(buffer.slice(0, cutoff), secrets));
+      buffer = buffer.slice(cutoff);
+    },
+    async end() {
+      stream.write(redactSecrets(buffer, secrets));
+      await new Promise((resolve) => stream.end(resolve));
+    },
+  };
+}
+
 async function runCheck(check, projectRoot, logsDirectory) {
   const startedAt = new Date();
   const logFile = path.join(logsDirectory, `${check.logName}.log`);
   const logStream = createWriteStream(logFile);
-  logStream.write(`$ ${check.command}\n\n`);
+  const logWriter = createLogWriter(logStream, secretValues(process.env));
+  logWriter.write(`$ ${check.command}\n\n`);
   process.stdout.write(`\n[${check.category}] ${check.command}\n`);
   const exitCode = await new Promise((resolve) => {
     const child = spawn(check.command, { cwd: projectRoot, env: process.env, shell: true });
     child.stdout.on("data", (chunk) => {
       process.stdout.write(chunk);
-      logStream.write(chunk);
+      logWriter.write(chunk);
     });
     child.stderr.on("data", (chunk) => {
       process.stderr.write(chunk);
-      logStream.write(chunk);
+      logWriter.write(chunk);
     });
     child.on("error", (error) => {
-      logStream.write(`\n${error.stack ?? error}\n`);
+      logWriter.write(`\n${error.stack ?? error}\n`);
       resolve(FAILED_EXIT_CODE);
     });
     child.on("close", (code) => resolve(code ?? FAILED_EXIT_CODE));
   });
-  await new Promise((resolve) => logStream.end(resolve));
+  await logWriter.end();
   return {
     ...check,
     status: exitCode === 0 ? "passed" : "failed",
@@ -366,6 +409,8 @@ function summarize(results, skippedCategories) {
 }
 
 async function writeManifest(file, projectRoot, status, checks, results, skippedCategories) {
+  const secrets = secretValues(process.env);
+  const redactCommand = (check) => ({ ...check, command: redactSecrets(check.command, secrets) });
   const manifest = {
     schemaVersion: CHECKS_MANIFEST_VERSION,
     generatedAt: new Date().toISOString(),
@@ -373,8 +418,8 @@ async function writeManifest(file, projectRoot, status, checks, results, skipped
     status,
     summary: summarize(results, skippedCategories),
     configuration: { skippedCategories },
-    discovered: checks,
-    results,
+    discovered: checks.map(redactCommand),
+    results: results.map(redactCommand),
   };
   await writeFile(file, `${JSON.stringify(manifest, null, 2)}\n`);
 }
@@ -390,12 +435,14 @@ async function main() {
   const outputDirectory = path.resolve(projectRoot, flags.out ?? path.join(".peacock", "evidence"));
   const logsDirectory = path.join(outputDirectory, "logs");
   const manifestFile = path.join(outputDirectory, "checks.json");
+  const discoveryFile = path.join(outputDirectory, "discovery.json");
   if (outputDirectory === projectRoot || outputDirectory === path.parse(outputDirectory).root) {
     throw new Error("--out must be a dedicated evidence directory, not the project or filesystem root");
   }
   await mkdir(outputDirectory, { recursive: true });
   if (!flags["dry-run"]) {
     await rm(manifestFile, { force: true });
+    await rm(discoveryFile, { force: true });
     await rm(logsDirectory, { force: true, recursive: true });
   }
   const config = await loadConfig(configFile);
@@ -404,8 +451,8 @@ async function main() {
   console.log(`peacock discovered ${checks.length} project check${checks.length === 1 ? "" : "s"}`);
   for (const check of checks) console.log(`  ${check.category.padEnd(7)} ${check.command}`);
   if (flags["dry-run"]) {
-    await writeManifest(manifestFile, projectRoot, "dry-run", checks, [], skippedCategories);
-    console.log(`discovery evidence -> ${manifestFile}`);
+    await writeManifest(discoveryFile, projectRoot, "dry-run", checks, [], skippedCategories);
+    console.log(`discovery evidence -> ${discoveryFile}`);
     return;
   }
   await mkdir(logsDirectory, { recursive: true });

@@ -21,20 +21,32 @@ JSON
 cat > "$PASS_PROJECT/peacock.config.json" <<'JSON'
 {
   "checks": {
+    "commands": [
+      { "name": "secret-redaction", "command": "node -e \"const value=process.env.PEACOCK_TEST_SECRET; process.stdout.write(value.slice(0,5)); setTimeout(() => process.stdout.write(value.slice(5)), 25)\"" }
+    ],
     "skip": ["build"]
   }
 }
 JSON
 
-node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PASS_PROJECT" >/dev/null
+PEACOCK_TEST_SECRET="super-secret-value" node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PASS_PROJECT" >/dev/null
 test ! -e "$PASS_PROJECT/.peacock/evidence/logs/stale.log"
+if grep -R -q "super-secret-value" "$PASS_PROJECT/.peacock/evidence"; then
+  echo "secret value leaked into evidence logs" >&2
+  exit 1
+fi
 node -e '
   const manifest = require(process.argv[1]);
   if (manifest.status !== "passed") throw new Error(`expected passed, got ${manifest.status}`);
-  if (manifest.summary.total !== 3) throw new Error(`expected 3 checks, got ${manifest.summary.total}`);
+  if (manifest.summary.total !== 4) throw new Error(`expected 4 checks, got ${manifest.summary.total}`);
   if (manifest.summary.skipped !== 1) throw new Error(`expected 1 skipped category, got ${manifest.summary.skipped}`);
   if (!manifest.results.some((result) => result.category === "e2e")) throw new Error("missing e2e evidence");
 ' "$PASS_PROJECT/.peacock/evidence/checks.json"
+
+cp "$PASS_PROJECT/.peacock/evidence/checks.json" "$PASS_PROJECT/completed-checks.json"
+node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PASS_PROJECT" --dry-run >/dev/null
+cmp "$PASS_PROJECT/completed-checks.json" "$PASS_PROJECT/.peacock/evidence/checks.json"
+test -f "$PASS_PROJECT/.peacock/evidence/discovery.json"
 
 FAIL_PROJECT="$TEST_ROOT/fail"
 mkdir -p "$FAIL_PROJECT"
@@ -43,8 +55,8 @@ cat > "$FAIL_PROJECT/peacock.config.json" <<'JSON'
   // JSON comments are supported because the documented config is JSONC.
   "checks": {
     "commands": [
-      { "name": "fails", "command": "node -e \"process.exit(7)\"" },
-      { "name": "still-runs", "command": "node -e \"console.log('complete evidence')\"" }
+      { "name": "unit:fast", "command": "node -e \"process.exit(7)\"" },
+      { "name": "unit fast", "command": "node -e \"console.log('complete evidence')\"" }
     ]
   }
 }
@@ -60,6 +72,33 @@ node -e '
   if (manifest.summary.total !== 2 || manifest.summary.failed !== 1 || manifest.summary.passed !== 1) {
     throw new Error(`unexpected summary: ${JSON.stringify(manifest.summary)}`);
   }
+  const logs = new Set(manifest.results.map((result) => result.log));
+  if (logs.size !== 2) throw new Error("colliding check ids must keep distinct logs");
 ' "$FAIL_PROJECT/.peacock/evidence/checks.json"
+
+SHELL_PROJECT="$TEST_ROOT/shell"
+mkdir -p "$SHELL_PROJECT/tests"
+printf '#!/usr/bin/env bash\nexit 0\n' > "$SHELL_PROJECT/tests/runnable.sh"
+printf '#!/usr/bin/env bash\nexit 99\n' > "$SHELL_PROJECT/tests/helper.sh"
+chmod +x "$SHELL_PROJECT/tests/runnable.sh"
+node "$REPO_ROOT/scripts/project-checks.mjs" --root "$SHELL_PROJECT" --dry-run >/dev/null
+node -e '
+  const discovery = require(process.argv[1]);
+  if (discovery.discovered.length !== 1 || discovery.discovered[0].source !== "tests/runnable.sh") {
+    throw new Error(`expected only executable shell test: ${JSON.stringify(discovery.discovered)}`);
+  }
+' "$SHELL_PROJECT/.peacock/evidence/discovery.json"
+
+PYTHON_PROJECT="$TEST_ROOT/python"
+mkdir -p "$PYTHON_PROJECT"
+cat > "$PYTHON_PROJECT/pyproject.toml" <<'TOML'
+[project]
+dependencies = ["pytest"]
+TOML
+node "$REPO_ROOT/scripts/project-checks.mjs" --root "$PYTHON_PROJECT" --dry-run >/dev/null
+node -e '
+  const discovery = require(process.argv[1]);
+  if (discovery.discovered.length !== 0) throw new Error("dependency-only Python tools are not configured checks");
+' "$PYTHON_PROJECT/.peacock/evidence/discovery.json"
 
 echo "project-checks: ALL PASS"

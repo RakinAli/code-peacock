@@ -3,4 +3,4 @@ interface:
   short_description: "Verify code, browser flows, and PR evidence"
   default_prompt: "Use $peacock to autonomously verify this branch end to end and leave the PR green for human review."
 policy:
-  allow_implicit_invocation: true
+  allow_implicit_invocation: false

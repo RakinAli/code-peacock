@@ -97,7 +97,9 @@ jobs:
 
       #        Run in PR mode on PR #$PR_NUMBER."
 
-      # The pipeline's report is useful even when the run fails partway.
+      # The pipeline's report is useful even when the run fails partway. Known
+      # secret env values are redacted from evidence logs by project-checks.mjs.
+      # Commands must not print encoded or transformed secrets.
       # .peacock/auth/ (credentials, browser session) is deliberately not uploaded.
       - name: Upload report + captures
         if: always()
