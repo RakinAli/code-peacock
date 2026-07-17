@@ -355,9 +355,21 @@ function redactSecrets(text, secrets) {
 
 function createLogWriter(stream, secrets) {
   let buffer = "";
+  let writeError = null;
+  const closed = new Promise((resolve) => {
+    stream.on("error", (error) => {
+      writeError ??= error;
+      resolve();
+    });
+    stream.once("finish", resolve);
+  });
   const tailLength = Math.max(0, ...secrets.map((secret) => secret.length - 1));
   return {
+    get error() {
+      return writeError;
+    },
     write(text) {
+      if (writeError) return;
       buffer += text;
       let cutoff = Math.max(0, buffer.length - tailLength);
       for (let changed = true; changed; ) {
@@ -374,8 +386,13 @@ function createLogWriter(stream, secrets) {
       buffer = buffer.slice(cutoff);
     },
     async end() {
-      stream.write(redactSecrets(buffer, secrets));
-      await new Promise((resolve) => stream.end(resolve));
+      if (!writeError) {
+        stream.write(redactSecrets(buffer, secrets));
+        stream.end();
+      }
+      buffer = "";
+      await closed;
+      return writeError;
     },
   };
 }
@@ -407,10 +424,13 @@ async function runCheck(check, projectRoot, logsDirectory) {
   });
   logWriter.write(stdoutDecoder.end());
   logWriter.write(stderrDecoder.end());
-  await logWriter.end();
+  const logError = await logWriter.end();
+  if (logError) {
+    process.stderr.write(`\n[${check.category}] failed to write log ${logFile}: ${logError.message ?? logError}\n`);
+  }
   return {
     ...check,
-    status: exitCode === 0 ? "passed" : "failed",
+    status: exitCode === 0 && !logError ? "passed" : "failed",
     exitCode,
     startedAt: startedAt.toISOString(),
     durationMs: Date.now() - startedAt.getTime(),
