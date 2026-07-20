@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-17T17:09:22.606Z",
+  "projectRoot": "/var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-verify.cdvutQ/checkout-service",
+  "status": "failed",
+  "summary": {
+    "total": 5,
+    "passed": 4,
+    "failed": 1,
+    "skipped": 0
+  },
+  "configuration": {
+    "skippedCategories": []
+  },
+  "discovered": [
+    {
+      "id": "package-lint",
+      "category": "lint",
+      "source": "package.json#scripts.lint",
+      "command": "npm run 'lint'",
+      "logName": "package-lint"
+    },
+    {
+      "id": "package-typecheck",
+      "category": "types",
+      "source": "package.json#scripts.typecheck",
+      "command": "npm run 'typecheck'",
+      "logName": "package-typecheck"
+    },
+    {
+      "id": "package-test-unit",
+      "category": "test",
+      "source": "package.json#scripts.test:unit",
+      "command": "npm run 'test:unit'",
+      "logName": "package-test-unit"
+    },
+    {
+      "id": "package-build",
+      "category": "build",
+      "source": "package.json#scripts.build",
+      "command": "npm run 'build'",
+      "logName": "package-build"
+    },
+    {
+      "id": "deploy-smoke",
+      "category": "e2e",
+      "source": "peacock.config.json",
+      "command": "node -e \"console.log('deploying with DEPLOY_TOKEN=' + process.env.DEPLOY_TOKEN); console.log('smoke: 200 OK')\"",
+      "logName": "deploy-smoke"
+    }
+  ],
+  "results": [
+    {
+      "id": "package-lint",
+      "category": "lint",
+      "source": "package.json#scripts.lint",
+      "command": "npm run 'lint'",
+      "logName": "package-lint",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T17:09:21.770Z",
+      "durationMs": 271,
+      "log": "logs/package-lint.log"
+    },
+    {
+      "id": "package-typecheck",
+      "category": "types",
+      "source": "package.json#scripts.typecheck",
+      "command": "npm run 'typecheck'",
+      "logName": "package-typecheck",
+      "status": "failed",
+      "exitCode": 2,
+      "startedAt": "2026-07-17T17:09:22.041Z",
+      "durationMs": 167,
+      "log": "logs/package-typecheck.log"
+    },
+    {
+      "id": "package-test-unit",
+      "category": "test",
+      "source": "package.json#scripts.test:unit",
+      "command": "npm run 'test:unit'",
+      "logName": "package-test-unit",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T17:09:22.208Z",
+      "durationMs": 176,
+      "log": "logs/package-test-unit.log"
+    },
+    {
+      "id": "package-build",
+      "category": "build",
+      "source": "package.json#scripts.build",
+      "command": "npm run 'build'",
+      "logName": "package-build",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T17:09:22.385Z",
+      "durationMs": 173,
+      "log": "logs/package-build.log"
+    },
+    {
+      "id": "deploy-smoke",
+      "category": "e2e",
+      "source": "peacock.config.json",
+      "command": "node -e \"console.log('deploying with DEPLOY_TOKEN=' + process.env.DEPLOY_TOKEN); console.log('smoke: 200 OK')\"",
+      "logName": "deploy-smoke",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T17:09:22.558Z",
+      "durationMs": 48,
+      "log": "logs/deploy-smoke.log"
+    }
+  ]
+}

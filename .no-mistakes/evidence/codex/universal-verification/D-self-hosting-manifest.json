@@ -1,0 +1,38 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-17T15:46:58.524Z",
+  "projectRoot": "/Users/rakinali/.no-mistakes/worktrees/e9e31ab65a3b/01KXRAM4M8CS62R3653QMQGRAV",
+  "status": "passed",
+  "summary": {
+    "total": 1,
+    "passed": 1,
+    "failed": 0,
+    "skipped": 0
+  },
+  "configuration": {
+    "skippedCategories": []
+  },
+  "discovered": [
+    {
+      "id": "shell-project-checks",
+      "category": "test",
+      "source": "tests/project-checks.sh",
+      "command": "bash 'tests/project-checks.sh'",
+      "logName": "shell-project-checks"
+    }
+  ],
+  "results": [
+    {
+      "id": "shell-project-checks",
+      "category": "test",
+      "source": "tests/project-checks.sh",
+      "command": "bash 'tests/project-checks.sh'",
+      "logName": "shell-project-checks",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T15:46:57.841Z",
+      "durationMs": 683,
+      "log": "logs/shell-project-checks.log"
+    }
+  ]
+}

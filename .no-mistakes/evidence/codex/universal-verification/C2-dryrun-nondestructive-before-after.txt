@@ -1,0 +1,36 @@
+############################################################
+# BEFORE FIX (parent of bd6d76b)                           #
+############################################################
+Step 1: full run produces a real evidence log
+  logs after full run: package-test.log 
+  manifest status: passed
+
+Step 2: a follow-up --dry-run discovery
+  logs after --dry-run: []
+  >>> prior evidence logs were DESTROYED by --dry-run
+
+############################################################
+# AFTER FIX (current bd6d76b)                              #
+############################################################
+Step 1: full run produces a real evidence log
+  logs after full run: package-test.log 
+  package-test.log content:
+    $ npm run 'test'
+    
+    
+    > test
+    > node -e "console.log('42 tests passed - real evidence')"
+    
+    42 tests passed - real evidence
+
+Step 2: a follow-up --dry-run discovery
+  logs after --dry-run: package-test.log 
+  package-test.log content STILL INTACT:
+    $ npm run 'test'
+    
+    
+    > test
+    > node -e "console.log('42 tests passed - real evidence')"
+    
+    42 tests passed - real evidence
+  >>> prior evidence logs PRESERVED across --dry-run

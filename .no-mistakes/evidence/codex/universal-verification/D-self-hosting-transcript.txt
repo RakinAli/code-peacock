@@ -1,0 +1,16 @@
+=== $ node scripts/project-checks.mjs --root <peacock repo> --out <tmp> ===
+(peacock discovering and running its OWN repository's checks)
+
+peacock discovered 1 project check
+  test    bash 'tests/project-checks.sh'
+
+[test] bash 'tests/project-checks.sh'
+project-checks: ALL PASS
+
+project checks: passed -> /var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-demo.klmmiw/self-host-out/checks.json
+
+runner exit code = 0
+
+=== manifest for peacock's own repo ===
+status: passed | summary: {"total":1,"passed":1,"failed":0,"skipped":0}
+  test   passed bash 'tests/project-checks.sh' -> logs/shell-project-checks.log

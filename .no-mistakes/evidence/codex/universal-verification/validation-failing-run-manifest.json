@@ -1,0 +1,114 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-07-17T17:47:57.880Z",
+  "projectRoot": "/var/folders/sr/khcw8qkn75j45yzhq0c064q00000gn/T/peacock-validate.lukZhK/runnable-app",
+  "status": "failed",
+  "summary": {
+    "total": 5,
+    "passed": 4,
+    "failed": 1,
+    "skipped": 0
+  },
+  "configuration": {
+    "skippedCategories": []
+  },
+  "discovered": [
+    {
+      "id": "package-lint",
+      "category": "lint",
+      "source": "package.json#scripts.lint",
+      "command": "npm run 'lint'",
+      "logName": "package-lint"
+    },
+    {
+      "id": "package-typecheck",
+      "category": "types",
+      "source": "package.json#scripts.typecheck",
+      "command": "npm run 'typecheck'",
+      "logName": "package-typecheck"
+    },
+    {
+      "id": "package-test-unit",
+      "category": "test",
+      "source": "package.json#scripts.test:unit",
+      "command": "npm run 'test:unit'",
+      "logName": "package-test-unit"
+    },
+    {
+      "id": "package-test-e2e",
+      "category": "e2e",
+      "source": "package.json#scripts.test:e2e",
+      "command": "npm run 'test:e2e'",
+      "logName": "package-test-e2e"
+    },
+    {
+      "id": "deploy-smoke",
+      "category": "custom",
+      "source": "peacock.config.json",
+      "command": "node -e \"const k=process.env.DEPLOY_API_TOKEN; process.stdout.write('connecting with token '+k.slice(0,6)); setTimeout(()=>process.stdout.write(k.slice(6)+'\\n done\\n'), 30)\"",
+      "logName": "deploy-smoke"
+    }
+  ],
+  "results": [
+    {
+      "id": "package-lint",
+      "category": "lint",
+      "source": "package.json#scripts.lint",
+      "command": "npm run 'lint'",
+      "logName": "package-lint",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T17:47:57.158Z",
+      "durationMs": 174,
+      "log": "logs/package-lint.log"
+    },
+    {
+      "id": "package-typecheck",
+      "category": "types",
+      "source": "package.json#scripts.typecheck",
+      "command": "npm run 'typecheck'",
+      "logName": "package-typecheck",
+      "status": "failed",
+      "exitCode": 2,
+      "startedAt": "2026-07-17T17:47:57.333Z",
+      "durationMs": 152,
+      "log": "logs/package-typecheck.log"
+    },
+    {
+      "id": "package-test-unit",
+      "category": "test",
+      "source": "package.json#scripts.test:unit",
+      "command": "npm run 'test:unit'",
+      "logName": "package-test-unit",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T17:47:57.485Z",
+      "durationMs": 153,
+      "log": "logs/package-test-unit.log"
+    },
+    {
+      "id": "package-test-e2e",
+      "category": "e2e",
+      "source": "package.json#scripts.test:e2e",
+      "command": "npm run 'test:e2e'",
+      "logName": "package-test-e2e",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T17:47:57.638Z",
+      "durationMs": 159,
+      "log": "logs/package-test-e2e.log"
+    },
+    {
+      "id": "deploy-smoke",
+      "category": "custom",
+      "source": "peacock.config.json",
+      "command": "node -e \"const k=process.env.DEPLOY_API_TOKEN; process.stdout.write('connecting with token '+k.slice(0,6)); setTimeout(()=>process.stdout.write(k.slice(6)+'\\n done\\n'), 30)\"",
+      "logName": "deploy-smoke",
+      "status": "passed",
+      "exitCode": 0,
+      "startedAt": "2026-07-17T17:47:57.797Z",
+      "durationMs": 82,
+      "log": "logs/deploy-smoke.log"
+    }
+  ]
+}

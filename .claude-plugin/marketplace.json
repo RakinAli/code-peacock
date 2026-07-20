@@ -8,7 +8,7 @@
   "plugins": [
     {
       "name": "code-peacock",
-      "description": "Autonomous review pipeline: senior-dev code review, generated tests, ruthless clean-code lint, headless-browser UI/UX audit with screenshots and videos, an HTML report, and a human-sounding PR.",
+      "description": "Autonomous end-to-end verification with discovered project checks, generated unit and browser tests, visual evidence, an HTML report, and a green PR.",
       "author": {
         "name": "Rakin Ali"
       },
