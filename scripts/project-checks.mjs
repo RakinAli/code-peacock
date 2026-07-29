@@ -271,8 +271,9 @@ async function discoverConventionalChecks(projectRoot) {
 }
 
 async function discoverDotnetChecks(projectRoot) {
-  const entries = await readdir(projectRoot);
-  const projectFile = entries.find((entry) => entry.endsWith(".sln") || entry.endsWith(".csproj"));
+  const entries = (await readdir(projectRoot)).sort();
+  const projectFile = entries.find((entry) => entry.endsWith(".sln")) ??
+    entries.find((entry) => entry.endsWith(".csproj"));
   if (!projectFile) return [];
   return [{ id: "dotnet-test", category: "test", source: projectFile, command: `dotnet test ${shellQuote(projectFile)}` }];
 }
@@ -355,9 +356,21 @@ function redactSecrets(text, secrets) {
 
 function createLogWriter(stream, secrets) {
   let buffer = "";
+  let writeError = null;
+  const closed = new Promise((resolve) => {
+    stream.on("error", (error) => {
+      writeError ??= error;
+      resolve();
+    });
+    stream.once("finish", resolve);
+  });
   const tailLength = Math.max(0, ...secrets.map((secret) => secret.length - 1));
   return {
+    get error() {
+      return writeError;
+    },
     write(text) {
+      if (writeError) return;
       buffer += text;
       let cutoff = Math.max(0, buffer.length - tailLength);
       for (let changed = true; changed; ) {
@@ -374,8 +387,13 @@ function createLogWriter(stream, secrets) {
       buffer = buffer.slice(cutoff);
     },
     async end() {
-      stream.write(redactSecrets(buffer, secrets));
-      await new Promise((resolve) => stream.end(resolve));
+      if (!writeError) {
+        stream.write(redactSecrets(buffer, secrets));
+        stream.end();
+      }
+      buffer = "";
+      await closed;
+      return writeError;
     },
   };
 }
@@ -407,10 +425,13 @@ async function runCheck(check, projectRoot, logsDirectory) {
   });
   logWriter.write(stdoutDecoder.end());
   logWriter.write(stderrDecoder.end());
-  await logWriter.end();
+  const logError = await logWriter.end();
+  if (logError) {
+    process.stderr.write(`\n[${check.category}] failed to write log ${logFile}: ${logError.message ?? logError}\n`);
+  }
   return {
     ...check,
-    status: exitCode === 0 ? "passed" : "failed",
+    status: exitCode === 0 && !logError ? "passed" : "failed",
     exitCode,
     startedAt: startedAt.toISOString(),
     durationMs: Date.now() - startedAt.getTime(),
@@ -459,11 +480,6 @@ async function main() {
     throw new Error("--out must be a dedicated evidence directory, not the project root, an ancestor, or the filesystem root");
   }
   await mkdir(outputDirectory, { recursive: true });
-  if (!flags["dry-run"]) {
-    await rm(manifestFile, { force: true });
-    await rm(discoveryFile, { force: true });
-    await rm(logsDirectory, { force: true, recursive: true });
-  }
   const config = await loadConfig(configFile);
   const skippedCategories = config.checks?.skip ?? [];
   const checks = await discoverChecks(projectRoot, config);
@@ -474,6 +490,9 @@ async function main() {
     console.log(`discovery evidence -> ${discoveryFile}`);
     return;
   }
+  await rm(manifestFile, { force: true });
+  await rm(discoveryFile, { force: true });
+  await rm(logsDirectory, { force: true, recursive: true });
   await mkdir(logsDirectory, { recursive: true });
   const results = [];
   await writeManifest(manifestFile, projectRoot, "running", checks, results, skippedCategories);
