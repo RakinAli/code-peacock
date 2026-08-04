@@ -220,6 +220,21 @@ printing encoded or transformed secrets, which cannot be recognized generically.
 Repository-specific commands belong in `peacock.config.json`; Peacock never silently
 turns a missing test framework into a passing result.
 
+## Watch it work
+
+```bash
+node ~/code-peacock/scripts/peacock-serve.mjs        # http://127.0.0.1:4288
+```
+
+A long run is more watchable than a scrolling terminal. The live view reads `.peacock/`
+and streams it: phases as they complete, screenshots the moment they land, console and
+network problems, accessibility violations, how much of your diff actually executed, the
+check table, and a link to the finished report. Zero dependencies, loopback only, and it
+refuses to serve anything under `.peacock/auth/`.
+
+It is presentation, not verification — it shows you what peacock found, it does not find
+anything itself.
+
 ## Auth for protected pages — one account, or several
 
 Peacock keeps everything it generates in `.peacock/` inside your repo (auto-gitignored).
@@ -315,6 +330,8 @@ scripts/affected-routes.mjs     reverse-dependency closure of the diff -> affect
 scripts/capture-diff.mjs        before/after image diffing (odiff-bin or pixelmatch)
 scripts/diff-coverage.mjs       did the browser actually run the changed lines?
 scripts/story-routes.mjs        Storybook stories for the changed components -> capture list
+scripts/peacock-run.mjs         the run's event log (phases, notes, verdict)
+scripts/peacock-serve.mjs       live view of .peacock/ on localhost, zero dependencies
 scripts/lib/peacock-accounts.mjs  account resolution, credential storage, route mapping
 scripts/lib/peacock-login.mjs     browser login, session checks, failure diagnosis
 scripts/lib/peacock-config.mjs    peacock.config.json reader
@@ -332,6 +349,7 @@ tests/project-checks.sh         contract tests for discovery, failures, and evid
 tests/auth.sh                   contract tests for accounts, routing, and credential storage
 tests/affected-routes.sh        contract tests for the dependency walk and route mapping
 tests/diff-coverage.sh          contract tests for the diff/coverage intersection
+tests/serve.sh                  contract tests for the live view and its path guards
 ```
 
 ## License

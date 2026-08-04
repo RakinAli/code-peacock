@@ -139,7 +139,28 @@ Announce the run by running the mascot animation in the foreground:
 bash "${CLAUDE_PLUGIN_ROOT}/scripts/strut.sh"
 ```
 
-Then print one line: the branch under review and the base branch.
+Then print one line: the branch under review and the base branch, and open the run log so
+the rest of the pipeline is watchable:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/peacock-run.mjs" start --branch <branch> --base <base>
+```
+
+From here on, call it at every phase boundary — `phase "Phase 5 — capture" --state start`
+and `--state done` — and `note` anything a human would want to see while it happens (a
+blocker found, a route skipped, a login that failed). It costs one cheap command and is
+the only record of progress that exists outside your own context.
+
+**Interactive runs:** offer the live view once, at the start, then get on with it:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/peacock-serve.mjs" &   # http://127.0.0.1:4288
+```
+
+It reads `.peacock/` and streams updates — phases, screenshots as they land, page
+problems, accessibility violations, diff coverage, the check table, the finished report.
+Loopback only, and it refuses to serve anything under `.peacock/auth/`. Skip it entirely
+in headless runs; nobody is watching.
 
 ## Phase 1 — Intent
 
