@@ -332,7 +332,7 @@ node "${CLAUDE_PLUGIN_ROOT}/scripts/ui-capture.mjs" \
   --account clinic-admin \
   --out .peacock/captures/clinic-admin \
   --viewports desktop,mobile \
-  --video --trace --a11y \
+  --video --trace --a11y --coverage \
   --hover "button.primary, .card a"
 ```
 
@@ -377,6 +377,28 @@ route the diff says is pixel-identical** — say in the report that you skipped 
 
 Read `manifest.json` and **view every screenshot**. You are about to review them; never
 review images you haven't actually looked at.
+
+### Did the browser actually run the change?
+
+Screenshotting ten routes proves nothing if none of them executed the code this branch
+touched. `--coverage` records what ran; this turns it into a number:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/diff-coverage.mjs" --base <base-branch>
+```
+
+It intersects the diff's changed lines with the collected coverage and writes
+`.peacock/evidence/diff-coverage.json`. Fidelity is **line-level** when the project has
+`v8-to-istanbul`, and **file-level** ("this module reached the browser") when it doesn't —
+the report must say which one it got, never imply the stronger one.
+
+- **Exit 1 = nothing you changed ran.** That is a blocker for the verdict, not a footnote:
+  you may not write "ship" on a UI change whose code never executed. Either find the route
+  or interaction that exercises it (a modal, a tab, an error state — drive it with
+  `--actions`) and capture again, or say plainly in the verdict that the change is
+  unverified and why.
+- Every changed file under `notExercised` goes in the report's "Not covered" section by
+  name. A reviewer deserves to know which parts of their diff peacock never touched.
 
 ## Phase 6 — UX audit (senior frontend + Laws of UX)
 
@@ -430,8 +452,13 @@ problems to seem thorough, and don't soften real ones.
 
 Produce a single self-contained HTML report:
 
+The verdict has one hard precondition: **"ship" requires evidence that the changed code
+ran.** If `diff-coverage.mjs` reported that nothing was exercised, the verdict is at best
+"fix-then-ship" with the gap named. Everything else is judgement; this one is arithmetic.
+
 1. Author `.peacock/reports/report-<branch>-<yyyy-mm-dd>.html` with these sections:
-   **Verdict** (ship / fix-then-ship / rethink, one paragraph) · **Intent** · **Code
+   **Verdict** (ship / fix-then-ship / rethink, one paragraph) · **Coverage of the diff**
+   (lines or files exercised, at the stated fidelity, with what was missed) · **Intent** · **Code
    review findings** (table, severity-sorted) · **Clean-code fixes applied** · **Tests**
    (added, results) · **UI gallery** (grouped by account when there is more than one, then
    per route: desktop/mobile side by side, before/after if captured, hover states, embedded

@@ -17,6 +17,7 @@ import { readPeacockConfig, resolveConfigFile } from "./lib/peacock-config.mjs";
 import { describeAccount, findAccount, resolveAccounts } from "./lib/peacock-accounts.mjs";
 import { loadPlaywright, requireFromProject } from "./lib/peacock-require.mjs";
 import { establishSession, looksSignedOut, resolveLoginSettings } from "./lib/peacock-login.mjs";
+import { createCoverageCollector } from "./lib/peacock-coverage.mjs";
 
 const HELP = `Usage: node ui-capture.mjs --base-url <url> --routes /a,/b [options]
 
@@ -39,6 +40,7 @@ Options:
   --config <file>             Peacock config path     (default peacock.config.json)
   --a11y                      ARIA snapshot + axe-core violations per route
   --trace                     Record a Playwright trace for each flow (implies --video)
+  --coverage                  Record which source files the browser actually executed
 
 Console errors and failed/5xx requests are always recorded per route into
 manifest.json — a page that screenshots cleanly while throwing is a finding.
@@ -59,7 +61,7 @@ const MAX_PROBLEMS_PER_ROUTE = 25;
 const MAX_VIOLATION_NODES = 3;
 const HTTP_ERROR_STATUS = 400;
 
-const BOOLEAN_FLAGS = new Set(["help", "video", "a11y", "trace", "require-login"]);
+const BOOLEAN_FLAGS = new Set(["help", "video", "a11y", "trace", "coverage", "require-login"]);
 
 function parseArgs(argv) {
   const flags = {};
@@ -173,8 +175,16 @@ async function captureStills({ browser, flags, run, route, url, entries, problem
     );
     const page = await context.newPage();
     watchPageProblems(page, route, problems);
+    const isCoverageViewport = viewportName === viewportNames[0] && Boolean(run.coverage);
+    if (isCoverageViewport) {
+      await page.coverage.startJSCoverage({ resetOnNavigation: false }).catch(() => {});
+    }
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await settle(page);
+    if (isCoverageViewport) {
+      const scripts = await page.coverage.stopJSCoverage().catch(() => []);
+      await run.coverage.add(page, route, scripts);
+    }
     if (viewportName === viewportNames[0] && run.expectsSession) {
       isSignedOut = await looksSignedOut(page, run.login);
     }
@@ -377,6 +387,10 @@ const failures = [];
 const problems = [];
 const flowSteps = flags.actions ? JSON.parse(await readFile(flags.actions, "utf8")) : null;
 const axeBuilder = flags.a11y ? loadAxeBuilder(root) : null;
+const v8toIstanbul = flags.coverage ? requireFromProject(root, ["v8-to-istanbul"]) : null;
+if (flags.coverage && !v8toIstanbul) {
+  console.warn("v8-to-istanbul not installed — recording which files loaded, not which lines ran");
+}
 if (flags.a11y && !axeBuilder) {
   console.warn("@axe-core/playwright not installed — capturing ARIA snapshots without violations");
 }
@@ -386,6 +400,7 @@ const run = {
   login,
   out,
   axeBuilder,
+  coverage: flags.coverage ? createCoverageCollector(root, v8toIstanbul) : null,
   loginDiagnosis: null,
   expectsSession: Boolean(login.url) || existsSync(account.sessionFile),
   canRecoverSession: false,
@@ -434,6 +449,11 @@ for (const route of routes) {
 }
 
 await browser.close();
+if (run.coverage) {
+  const coverageFile = path.join(out, "coverage.json");
+  await writeFile(coverageFile, `${JSON.stringify(run.coverage.toJSON(), null, 2)}\n`);
+  console.log(`coverage (${run.coverage.fidelity}) -> ${coverageFile}`);
+}
 const manifestFile = path.join(out, "manifest.json");
 await writeFile(
   manifestFile,

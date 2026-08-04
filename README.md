@@ -63,7 +63,8 @@ autopilot) can make peacock merge on its own. See [Never merges](#peacock-never-
    copy, friction, what to cut.
 9. **Reports evidence, not vibes.** One self-contained HTML file (screenshots and videos
    embedded) with a ship / fix-then-ship / rethink verdict, backed by a machine-readable
-   check manifest and per-command logs.
+   check manifest and per-command logs — and by coverage of the diff itself, so "ship"
+   is only available when the browser demonstrably ran the code you changed.
 10. **Opens a PR that reads human** — short, concrete, with the screenshots that
     matter. No AI attribution, no boilerplate — **then babysits it to green**: watches
     CI and fixes failures (up to a configurable cap), implements review feedback,
@@ -310,10 +311,12 @@ scripts/ui-capture.mjs          Playwright captures (screenshots, states, videos
 scripts/peacock-auth.mjs        named test accounts: status, set, login, verify
 scripts/affected-routes.mjs     reverse-dependency closure of the diff -> affected URLs
 scripts/capture-diff.mjs        before/after image diffing (odiff-bin or pixelmatch)
+scripts/diff-coverage.mjs       did the browser actually run the changed lines?
 scripts/lib/peacock-accounts.mjs  account resolution, credential storage, route mapping
 scripts/lib/peacock-login.mjs     browser login, session checks, failure diagnosis
 scripts/lib/peacock-config.mjs    peacock.config.json reader
 scripts/lib/peacock-require.mjs   resolves optional packages from the TARGET project
+scripts/lib/peacock-coverage.mjs  V8 coverage -> original source files, via source maps
 scripts/project-checks.mjs      cross-stack check discovery + durable evidence logs
 scripts/inline-assets.mjs       makes the HTML report self-contained
 scripts/pr-threads.mjs          list/reply/resolve PR review threads (GraphQL via gh)
@@ -325,6 +328,7 @@ templates/peacock-scheduled.yml GitHub Actions workflow — scheduled autopilot
 tests/project-checks.sh         contract tests for discovery, failures, and evidence
 tests/auth.sh                   contract tests for accounts, routing, and credential storage
 tests/affected-routes.sh        contract tests for the dependency walk and route mapping
+tests/diff-coverage.sh          contract tests for the diff/coverage intersection
 ```
 
 ## License
