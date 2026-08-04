@@ -11,6 +11,7 @@ import path from "node:path";
 import readline from "node:readline";
 
 import { readPeacockConfig, resolveConfigFile } from "./lib/peacock-config.mjs";
+import { loadPlaywright } from "./lib/peacock-require.mjs";
 import {
   AUTH_DIRECTORY,
   describeAccount,
@@ -23,7 +24,6 @@ import {
   credentialsMissingDiagnosis,
   establishSession,
   isSessionValid,
-  loadPlaywright,
   resolveLoginSettings,
   signIn,
 } from "./lib/peacock-login.mjs";

@@ -10,8 +10,15 @@
 #
 # The shims refuse every mechanical PR-merge / protected-branch-write vector and
 # forward everything else to the real binary:
-#   gh   — blocks `gh pr merge`, `gh api ... pulls/<n>/merge`, `gh api ... mergePullRequest`.
-#   git  — blocks `git push` whose destination refspec targets a protected branch.
+#   gh   — blocks `gh pr merge`, `gh api ... pulls/<n>/merge`, `gh api ... mergePullRequest`,
+#          plus credential read-out (`gh auth token`, `gh secret`, `gh variable`).
+#   git  — blocks `git push` whose destination refspec targets a protected branch,
+#          `git push` to an ad-hoc URL, and `git remote add|set-url`.
+#
+# The last three exist because peacock reads untrusted text (PR bodies, review
+# threads) while holding push credentials. A push to an attacker-controlled
+# remote is the documented way that shape becomes exfiltration, and pushing to
+# github.com is exactly what a network firewall has to allow.
 #
 # Environment overrides:
 #   PEACOCK_REAL_GH / PEACOCK_REAL_GIT     real binaries to forward to (default: command -v).
@@ -41,6 +48,14 @@ if [[ "\$1" == "pr" && "\$2" == "merge" ]]; then
   echo "peacock: 'gh pr merge' is blocked — peacock never merges." >&2
   exit 1
 fi
+if [[ "\$1" == "auth" && "\$2" == "token" ]]; then
+  echo "peacock: 'gh auth token' is blocked — peacock never reads credentials out." >&2
+  exit 1
+fi
+if [[ "\$1" == "secret" || "\$1" == "variable" ]]; then
+  echo "peacock: 'gh \$1' is blocked — peacock never reads or writes repository secrets." >&2
+  exit 1
+fi
 if [[ "\$1" == "api" ]]; then
   for arg in "\$@"; do
     if [[ "\$arg" == *mergePullRequest* ]]; then
@@ -51,6 +66,10 @@ if [[ "\$1" == "api" ]]; then
       echo "peacock: 'gh api ... pulls/<n>/merge' is blocked — peacock never merges." >&2
       exit 1
     fi
+    if [[ "\$arg" == */actions/secrets* || "\$arg" == */actions/variables* ]]; then
+      echo "peacock: 'gh api ... actions/secrets' is blocked — peacock never reads repository secrets." >&2
+      exit 1
+    fi
   done
 fi
 exec "$real_gh" "\$@"
@@ -58,11 +77,21 @@ SHIM
 
   cat > "$shim_dir/git" <<SHIM
 #!/usr/bin/env bash
-# Peacock merge kill-switch: refuse pushes to a protected branch, forward the rest.
+# Peacock kill-switch: refuse protected-branch pushes and ad-hoc remotes, forward the rest.
+if [[ "\$1" == "remote" && ( "\$2" == "add" || "\$2" == "set-url" ) ]]; then
+  echo "peacock: 'git remote \$2' is blocked — peacock pushes only to the remotes the repo already has." >&2
+  exit 1
+fi
 if [[ "\$1" == "push" ]]; then
   protected="\${PEACOCK_PROTECTED_BRANCHES:-main master prod production release}"
   for arg in "\$@"; do
-    case "\$arg" in -*) continue ;; esac
+    case "\$arg" in
+      -*) continue ;;
+      *://*|*@*:*)
+        echo "peacock: 'git push' to an ad-hoc URL is blocked — peacock pushes only to a configured remote." >&2
+        exit 1
+        ;;
+    esac
     dest="\${arg##*:}"
     dest="\${dest#+}"
     dest="\${dest#refs/heads/}"

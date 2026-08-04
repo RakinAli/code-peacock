@@ -5,7 +5,6 @@
 // always "succeeds". A wrong password, an MFA gate, or a renamed field all end
 // with a saved session file and a run that quietly screenshots login pages.
 
-import { createRequire } from "node:module";
 import { mkdir } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
@@ -28,21 +27,6 @@ const MAX_ERROR_CANDIDATES = 5;
 const MAX_REASON_LENGTH = 240;
 const MAX_BODY_SAMPLE = 4_000;
 const LOGIN_VIEWPORT = { width: 1440, height: 900 };
-
-export function loadPlaywright(root) {
-  const requireFromProject = createRequire(path.join(path.resolve(root), "package.json"));
-  for (const packageName of ["playwright", "playwright-core", "@playwright/test"]) {
-    try {
-      return requireFromProject(packageName);
-    } catch {
-      // try the next package name
-    }
-  }
-  throw new Error(
-    "Playwright not found in this project. Install it first:\n" +
-      "  npm i -D playwright && npx playwright install chromium"
-  );
-}
 
 function remedyFor(outcome, account, login) {
   switch (outcome) {

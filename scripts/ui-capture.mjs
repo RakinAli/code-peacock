@@ -15,12 +15,8 @@ import path from "node:path";
 
 import { readPeacockConfig, resolveConfigFile } from "./lib/peacock-config.mjs";
 import { describeAccount, findAccount, resolveAccounts } from "./lib/peacock-accounts.mjs";
-import {
-  establishSession,
-  loadPlaywright,
-  looksSignedOut,
-  resolveLoginSettings,
-} from "./lib/peacock-login.mjs";
+import { loadPlaywright, requireFromProject } from "./lib/peacock-require.mjs";
+import { establishSession, looksSignedOut, resolveLoginSettings } from "./lib/peacock-login.mjs";
 
 const HELP = `Usage: node ui-capture.mjs --base-url <url> --routes /a,/b [options]
 
@@ -41,7 +37,11 @@ Options:
   --login-submit-selector <sel> (default: button[type=submit])
   --require-login             Exit 3 instead of capturing signed-out pages
   --config <file>             Peacock config path     (default peacock.config.json)
-  --a11y                      Save an ARIA snapshot per route
+  --a11y                      ARIA snapshot + axe-core violations per route
+  --trace                     Record a Playwright trace for each flow (implies --video)
+
+Console errors and failed/5xx requests are always recorded per route into
+manifest.json — a page that screenshots cleanly while throwing is a finding.
 `;
 
 const VIEWPORTS = {
@@ -54,8 +54,12 @@ const NETWORK_IDLE_TIMEOUT_MS = 10_000;
 const FLOW_STEP_PAUSE_MS = 400;
 const USAGE_EXIT_CODE = 2;
 const LOGIN_FAILED_EXIT_CODE = 3;
+const MAX_PROBLEM_TEXT = 300;
+const MAX_PROBLEMS_PER_ROUTE = 25;
+const MAX_VIOLATION_NODES = 3;
+const HTTP_ERROR_STATUS = 400;
 
-const BOOLEAN_FLAGS = new Set(["help", "video", "a11y", "require-login"]);
+const BOOLEAN_FLAGS = new Set(["help", "video", "a11y", "trace", "require-login"]);
 
 function parseArgs(argv) {
   const flags = {};
@@ -98,6 +102,47 @@ function contextOptions({ viewportName, sessionFile, extra = {} }) {
   };
 }
 
+// A page that screenshots cleanly while throwing errors and 404-ing its own API
+// passes a visual review and fails a user. Record both, always.
+function watchPageProblems(page, route, problems) {
+  const record = (kind, text) => {
+    if (problems.length >= MAX_PROBLEMS_PER_ROUTE) return;
+    const entry = { route, kind, text: text.slice(0, MAX_PROBLEM_TEXT) };
+    if (problems.some((seen) => seen.kind === entry.kind && seen.text === entry.text)) return;
+    problems.push(entry);
+  };
+  page.on("console", (message) => {
+    if (message.type() === "error") record("console", message.text());
+  });
+  page.on("pageerror", (error) => record("exception", String(error.message ?? error)));
+  page.on("requestfailed", (request) => {
+    record("request", `${request.method()} ${request.url()} — ${request.failure()?.errorText ?? "failed"}`);
+  });
+  page.on("response", (response) => {
+    if (response.status() >= HTTP_ERROR_STATUS) {
+      record("response", `${response.status()} ${response.request().method()} ${response.url()}`);
+    }
+  });
+}
+
+function loadAxeBuilder(root) {
+  const axe = requireFromProject(root, ["@axe-core/playwright"]);
+  return axe?.default ?? axe?.AxeBuilder ?? axe ?? null;
+}
+
+// axe finds what a screenshot cannot prove: contrast ratios, missing names,
+// broken roles. The model then spends its tokens on what axe cannot see.
+async function findAccessibilityViolations(page, AxeBuilder) {
+  const results = await new AxeBuilder({ page }).analyze();
+  return results.violations.map((violation) => ({
+    id: violation.id,
+    impact: violation.impact,
+    help: violation.help,
+    helpUrl: violation.helpUrl,
+    nodes: violation.nodes.slice(0, MAX_VIOLATION_NODES).map((node) => node.target.join(" ")),
+  }));
+}
+
 async function captureInteractionStates({ page, selectors, route, base, out, entries }) {
   for (const selector of selectors.split(",").map((value) => value.trim()).filter(Boolean)) {
     const target = page.locator(selector).first();
@@ -118,7 +163,7 @@ async function captureInteractionStates({ page, selectors, route, base, out, ent
   }
 }
 
-async function captureStills({ browser, flags, run, route, url, entries }) {
+async function captureStills({ browser, flags, run, route, url, entries, problems }) {
   const viewportNames = (flags.viewports ?? "desktop,mobile").split(",").map((value) => value.trim());
   let isSignedOut = false;
   for (const viewportName of viewportNames) {
@@ -127,6 +172,7 @@ async function captureStills({ browser, flags, run, route, url, entries }) {
       contextOptions({ viewportName, sessionFile: run.account.sessionFile })
     );
     const page = await context.newPage();
+    watchPageProblems(page, route, problems);
     await page.goto(url, { waitUntil: "domcontentloaded" });
     await settle(page);
     if (viewportName === viewportNames[0] && run.expectsSession) {
@@ -147,10 +193,29 @@ async function captureStills({ browser, flags, run, route, url, entries }) {
       const a11yFile = path.join(run.out, `${base}-aria.yml`);
       await writeFile(a11yFile, snapshot);
       entries.push({ route, account: run.account.name, viewport: viewportName, kind: "a11y", file: a11yFile });
+      await auditAccessibility({ page, route, run, entries });
     }
     await context.close();
   }
   return isSignedOut;
+}
+
+async function auditAccessibility({ page, route, run, entries }) {
+  if (!run.axeBuilder) return;
+  try {
+    const violations = await findAccessibilityViolations(page, run.axeBuilder);
+    entries.push({ route, account: run.account.name, viewport: "desktop", kind: "axe", violations });
+    console.log(`  axe -> ${violations.length} violations`);
+  } catch (error) {
+    entries.push({
+      route,
+      account: run.account.name,
+      viewport: "desktop",
+      kind: "axe",
+      error: String(error.message ?? error),
+    });
+    console.error(`  axe FAILED on ${route}: ${error}`);
+  }
 }
 
 async function runFlowSteps(page, steps, baseUrl) {
@@ -199,7 +264,7 @@ async function smoothScrollThrough(page) {
   });
 }
 
-async function captureVideo({ browser, flags, run, route, url, entries, flowSteps }) {
+async function captureVideo({ browser, flags, run, route, url, entries, problems, flowSteps }) {
   const context = await browser.newContext(
     contextOptions({
       viewportName: "desktop",
@@ -207,26 +272,38 @@ async function captureVideo({ browser, flags, run, route, url, entries, flowStep
       extra: { recordVideo: { dir: run.out, size: VIEWPORTS.desktop } },
     })
   );
+  const base = `${slugify(route)}-${run.account.name}`;
+  // A trace carries DOM snapshots, network and console in one replayable file —
+  // strictly more than the video for anyone debugging the flow.
+  const traceFile = flags.trace ? path.join(run.out, `${base}-flow.trace.zip`) : "";
+  if (traceFile) await context.tracing.start({ screenshots: true, snapshots: true });
   const page = await context.newPage();
+  watchPageProblems(page, route, problems);
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await settle(page);
   if (flowSteps) await runFlowSteps(page, flowSteps, flags["base-url"]);
   else await smoothScrollThrough(page);
   const recordedPath = await page.video().path();
+  if (traceFile) await context.tracing.stop({ path: traceFile });
   await context.close(); // flushes the recording
-  const file = path.join(run.out, `${slugify(route)}-${run.account.name}-flow.webm`);
+  const file = path.join(run.out, `${base}-flow.webm`);
   await rename(recordedPath, file);
   entries.push({ route, account: run.account.name, viewport: "desktop", kind: "video", file });
   console.log(`  video -> ${file}`);
+  if (traceFile) {
+    entries.push({ route, account: run.account.name, viewport: "desktop", kind: "trace", file: traceFile });
+    console.log(`  trace -> ${traceFile}`);
+  }
 }
 
 // A session that expired mid-run turns every later capture into a login page.
 // Refresh it once, then redo the route that caught it.
 async function captureRoute({ browser, flags, run, route, url, flowSteps }) {
   const entries = [];
-  const isSignedOut = await captureStills({ browser, flags, run, route, url, entries });
-  if (flags.video) await captureVideo({ browser, flags, run, route, url, entries, flowSteps });
-  if (!isSignedOut || !run.canRecoverSession) return { entries, isSignedOut };
+  const problems = [];
+  const isSignedOut = await captureStills({ browser, flags, run, route, url, entries, problems });
+  if (flags.video) await captureVideo({ browser, flags, run, route, url, entries, problems, flowSteps });
+  if (!isSignedOut || !run.canRecoverSession) return { entries, problems, isSignedOut };
 
   console.warn(`  ${route} rendered signed out — refreshing the ${run.account.name} session`);
   run.canRecoverSession = false;
@@ -241,14 +318,19 @@ async function captureRoute({ browser, flags, run, route, url, flowSteps }) {
   run.loginDiagnosis = recovery;
   if (recovery.outcome !== "ok") {
     console.error(`  session refresh failed (${recovery.outcome}): ${recovery.remedy}`);
-    return { entries, isSignedOut: true };
+    return { entries, problems, isSignedOut: true };
   }
   const retryEntries = [];
-  const stillSignedOut = await captureStills({ browser, flags, run, route, url, entries: retryEntries });
+  const retryProblems = [];
+  const stillSignedOut = await captureStills({
+    browser, flags, run, route, url, entries: retryEntries, problems: retryProblems,
+  });
   if (flags.video) {
-    await captureVideo({ browser, flags, run, route, url, entries: retryEntries, flowSteps });
+    await captureVideo({
+      browser, flags, run, route, url, entries: retryEntries, problems: retryProblems, flowSteps,
+    });
   }
-  return { entries: retryEntries, isSignedOut: stillSignedOut };
+  return { entries: retryEntries, problems: retryProblems, isSignedOut: stillSignedOut };
 }
 
 const flags = parseArgs(process.argv.slice(2));
@@ -292,12 +374,18 @@ try {
 const browser = await playwright.chromium.launch();
 const captures = [];
 const failures = [];
+const problems = [];
 const flowSteps = flags.actions ? JSON.parse(await readFile(flags.actions, "utf8")) : null;
+const axeBuilder = flags.a11y ? loadAxeBuilder(root) : null;
+if (flags.a11y && !axeBuilder) {
+  console.warn("@axe-core/playwright not installed — capturing ARIA snapshots without violations");
+}
 
 const run = {
   account,
   login,
   out,
+  axeBuilder,
   loginDiagnosis: null,
   expectsSession: Boolean(login.url) || existsSync(account.sessionFile),
   canRecoverSession: false,
@@ -332,6 +420,10 @@ for (const route of routes) {
   try {
     const result = await captureRoute({ browser, flags, run, route, url, flowSteps });
     captures.push(...result.entries);
+    problems.push(...result.problems);
+    if (result.problems.length > 0) {
+      console.warn(`  ${result.problems.length} console/network problems on ${route}`);
+    }
     if (result.isSignedOut) {
       failures.push({ route, account: account.name, error: "rendered signed out" });
     }
@@ -346,10 +438,13 @@ const manifestFile = path.join(out, "manifest.json");
 await writeFile(
   manifestFile,
   JSON.stringify(
-    { account: describeAccount(account), login: run.loginDiagnosis, captures, failures },
+    { account: describeAccount(account), login: run.loginDiagnosis, captures, problems, failures },
     null,
     2
   )
 );
-console.log(`\n${captures.length} artifacts, ${failures.length} failed routes -> ${manifestFile}`);
+console.log(
+  `\n${captures.length} artifacts, ${problems.length} page problems, ` +
+    `${failures.length} failed routes -> ${manifestFile}`
+);
 process.exit(failures.length > 0 ? 1 : 0);
