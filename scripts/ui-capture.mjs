@@ -37,6 +37,7 @@ Options:
   --login-pass-selector <sel> (default: input[type=password])
   --login-submit-selector <sel> (default: button[type=submit])
   --require-login             Exit 3 instead of capturing signed-out pages
+  --no-login                  Never sign in (Storybook and other unauthenticated targets)
   --config <file>             Peacock config path     (default peacock.config.json)
   --a11y                      ARIA snapshot + axe-core violations per route
   --trace                     Record a Playwright trace for each flow (implies --video)
@@ -61,7 +62,7 @@ const MAX_PROBLEMS_PER_ROUTE = 25;
 const MAX_VIOLATION_NODES = 3;
 const HTTP_ERROR_STATUS = 400;
 
-const BOOLEAN_FLAGS = new Set(["help", "video", "a11y", "trace", "coverage", "require-login"]);
+const BOOLEAN_FLAGS = new Set(["help", "video", "a11y", "trace", "coverage", "require-login", "no-login"]);
 
 function parseArgs(argv) {
   const flags = {};
@@ -402,7 +403,7 @@ const run = {
   axeBuilder,
   coverage: flags.coverage ? createCoverageCollector(root, v8toIstanbul) : null,
   loginDiagnosis: null,
-  expectsSession: Boolean(login.url) || existsSync(account.sessionFile),
+  expectsSession: !flags["no-login"] && (Boolean(login.url) || existsSync(account.sessionFile)),
   canRecoverSession: false,
 };
 

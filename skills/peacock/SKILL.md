@@ -378,6 +378,33 @@ route the diff says is pixel-identical** — say in the report that you skipped 
 Read `manifest.json` and **view every screenshot**. You are about to review them; never
 review images you haven't actually looked at.
 
+### Storybook — the states the real app hides
+
+If the repo has a `.storybook/` directory, capture stories **as well as** routes. The
+states a review most needs to see — loading, empty, error, disabled, permission-denied —
+are exactly the ones that need a login, a seeded database, or a race you cannot trigger on
+demand, and they are one URL away if the team already wrote a story for them.
+
+```bash
+# Storybook on its own port; peacock does not start it if it is already up
+ROUTES=$(node "${CLAUDE_PLUGIN_ROOT}/scripts/story-routes.mjs" \
+  --base-url http://localhost:6006 --paths <changed files> --routes)
+
+node "${CLAUDE_PLUGIN_ROOT}/scripts/ui-capture.mjs" \
+  --base-url http://localhost:6006 --routes "$ROUTES" \
+  --out .peacock/captures/stories --no-login --a11y
+```
+
+Pass the changed files from `affected-routes.json` as `--paths` so you capture the stories
+for the components this branch touched, not the whole design system. `--no-login` is
+required: Storybook is unauthenticated, and without it peacock would try the app's login
+form against the Storybook server. Label these in the report by story title and name (both
+are in `.peacock/evidence/stories.json`), not by their iframe URL.
+
+Stories are a **supplement**, never a substitute: a component that looks right in isolation
+can still be wired up wrong in the app. If a route was auth-blocked and you captured its
+component's stories instead, say exactly that in "Not covered".
+
 ### Did the browser actually run the change?
 
 Screenshotting ten routes proves nothing if none of them executed the code this branch

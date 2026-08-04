@@ -54,7 +54,9 @@ autopilot) can make peacock merge on its own. See [Never merges](#peacock-never-
    test account each route needs, and honest about the ones it couldn't reach. Console
    errors, uncaught exceptions and failed requests are recorded per route, accessibility
    violations come from axe-core rather than from squinting at a PNG, and each flow ships
-   a replayable Playwright trace.
+   a replayable Playwright trace. Where the repo has Storybook, it also captures the
+   stories for the changed components — the loading, empty and error states the running
+   app keeps behind a login or a seeded database.
 7. **Audits UX like it means it.** Every capture is reviewed against the
    [Laws of UX](https://lawsofux.com) and a frontend-conventions checklist: does your
    new button match the other 12 buttons in the app? Missing loading/empty/error
@@ -312,6 +314,7 @@ scripts/peacock-auth.mjs        named test accounts: status, set, login, verify
 scripts/affected-routes.mjs     reverse-dependency closure of the diff -> affected URLs
 scripts/capture-diff.mjs        before/after image diffing (odiff-bin or pixelmatch)
 scripts/diff-coverage.mjs       did the browser actually run the changed lines?
+scripts/story-routes.mjs        Storybook stories for the changed components -> capture list
 scripts/lib/peacock-accounts.mjs  account resolution, credential storage, route mapping
 scripts/lib/peacock-login.mjs     browser login, session checks, failure diagnosis
 scripts/lib/peacock-config.mjs    peacock.config.json reader
