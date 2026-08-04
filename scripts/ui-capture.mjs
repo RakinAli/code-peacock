@@ -5,11 +5,22 @@
 //
 // Playwright is resolved from the TARGET project (cwd), not from this plugin,
 // so captures always use the browser build the project already depends on.
+//
+// One run captures as ONE named account (see peacock-auth.mjs). Projects with
+// several kinds of user run it once per account.
 
-import { createRequire } from "node:module";
 import { mkdir, readFile, writeFile, rename } from "node:fs/promises";
 import { existsSync } from "node:fs";
 import path from "node:path";
+
+import { readPeacockConfig, resolveConfigFile } from "./lib/peacock-config.mjs";
+import { describeAccount, findAccount, resolveAccounts } from "./lib/peacock-accounts.mjs";
+import {
+  establishSession,
+  loadPlaywright,
+  looksSignedOut,
+  resolveLoginSettings,
+} from "./lib/peacock-login.mjs";
 
 const HELP = `Usage: node ui-capture.mjs --base-url <url> --routes /a,/b [options]
 
@@ -17,17 +28,19 @@ Options:
   --base-url <url>            Dev server root, e.g. http://localhost:3000  (required)
   --routes </a,/b>            Comma-separated routes to capture            (required)
   --out <dir>                 Output directory        (default .peacock/captures)
+  --account <name>            Sign in as this peacock account (default: the first one)
   --viewports <list>          desktop,mobile          (default desktop,mobile)
   --hover "<sel1, sel2>"      Capture hover + focus states for selectors
   --video                     Record a scroll-through video per route
   --actions <file.json>       Flow steps recorded on video: [{type,selector,value}]
                               types: click|fill|hover|press|goto|wait|scroll
-  --storage-state <file>      Playwright storage state (reused if it exists)
-  --login-url <url>           Log in first and save storage state. Credentials from
-                              PEACOCK_EMAIL / PEACOCK_PASSWORD or .peacock/auth/.env
+  --storage-state <file>      Override the account's saved session file
+  --login-url <url>           Log in first (default: login.url from peacock.config.json)
   --login-user-selector <sel> (default: input[type=email], input[name=email])
   --login-pass-selector <sel> (default: input[type=password])
   --login-submit-selector <sel> (default: button[type=submit])
+  --require-login             Exit 3 instead of capturing signed-out pages
+  --config <file>             Peacock config path     (default peacock.config.json)
   --a11y                      Save an ARIA snapshot per route
 `;
 
@@ -38,55 +51,31 @@ const VIEWPORTS = {
 const SETTLE_MS = 600;
 const HOVER_TRANSITION_MS = 400;
 const NETWORK_IDLE_TIMEOUT_MS = 10_000;
+const FLOW_STEP_PAUSE_MS = 400;
+const USAGE_EXIT_CODE = 2;
+const LOGIN_FAILED_EXIT_CODE = 3;
 
-const BOOLEAN_FLAGS = new Set(["help", "video", "a11y"]);
+const BOOLEAN_FLAGS = new Set(["help", "video", "a11y", "require-login"]);
 
 function parseArgs(argv) {
   const flags = {};
-  for (let i = 0; i < argv.length; i++) {
-    const arg = argv[i];
-    if (!arg.startsWith("--")) continue;
-    const key = arg.slice(2);
+  for (let index = 0; index < argv.length; index++) {
+    const argument = argv[index];
+    if (!argument.startsWith("--")) continue;
+    const key = argument.slice(2);
     if (BOOLEAN_FLAGS.has(key)) {
       flags[key] = true;
       continue;
     }
-    const next = argv[i + 1];
-    if (next === undefined || next.startsWith("--")) {
+    const value = argv[index + 1];
+    if (value === undefined || value.startsWith("--")) {
       console.error(`flag --${key} requires a value`);
-      process.exit(2);
+      process.exit(USAGE_EXIT_CODE);
     }
-    flags[key] = next;
-    i++;
+    flags[key] = value;
+    index++;
   }
   return flags;
-}
-
-function loadPlaywright() {
-  const requireFromProject = createRequire(path.join(process.cwd(), "package.json"));
-  for (const pkg of ["playwright", "playwright-core", "@playwright/test"]) {
-    try {
-      return requireFromProject(pkg);
-    } catch {
-      // try the next package name
-    }
-  }
-  console.error(
-    "Playwright not found in this project. Install it first:\n" +
-      "  npm i -D playwright && npx playwright install chromium"
-  );
-  process.exit(2);
-}
-
-async function loadDotEnv(file) {
-  if (!existsSync(file)) return {};
-  const text = await readFile(file, "utf8");
-  const env = {};
-  for (const line of text.split("\n")) {
-    const match = line.match(/^\s*([A-Z0-9_]+)\s*=\s*(.*)\s*$/);
-    if (match) env[match[1]] = match[2].replace(/^["']|["']$/g, "");
-  }
-  return env;
 }
 
 function slugify(text) {
@@ -101,73 +90,16 @@ async function settle(page) {
   await page.waitForTimeout(SETTLE_MS);
 }
 
-async function login(browser, flags, credentials) {
-  if (!credentials.email || !credentials.password) {
-    console.warn("login-url given but PEACOCK_EMAIL/PEACOCK_PASSWORD missing — skipping login");
-    return;
-  }
-  const context = await browser.newContext({ viewport: VIEWPORTS.desktop });
-  const page = await context.newPage();
-  const loginUrl = new URL(flags["login-url"], flags["base-url"]).href;
-  await page.goto(loginUrl, { waitUntil: "domcontentloaded" });
-  await settle(page);
-  const userSelector =
-    flags["login-user-selector"] ?? "input[type=email], input[name=email], input[name=username]";
-  const passSelector = flags["login-pass-selector"] ?? "input[type=password]";
-  const submitSelector = flags["login-submit-selector"] ?? "button[type=submit]";
-  await page.locator(userSelector).first().fill(credentials.email);
-  await page.locator(passSelector).first().fill(credentials.password);
-  await page.locator(submitSelector).first().click();
-  await settle(page);
-  // Session state lives under .peacock/auth/, never under the captures dir —
-  // captures get uploaded as CI artifacts, auth material must not.
-  const statePath = flags["storage-state"] ?? path.join(".peacock", "auth", "storage-state.json");
-  await mkdir(path.dirname(statePath), { recursive: true });
-  await context.storageState({ path: statePath });
-  await context.close();
-  flags["storage-state"] = statePath;
-  console.log(`logged in, session saved to ${statePath}`);
-}
-
-function contextOptions(flags, viewportName, extra = {}) {
-  const statePath = flags["storage-state"];
+function contextOptions({ viewportName, sessionFile, extra = {} }) {
   return {
     viewport: VIEWPORTS[viewportName],
-    ...(statePath && existsSync(statePath) ? { storageState: statePath } : {}),
+    ...(sessionFile && existsSync(sessionFile) ? { storageState: sessionFile } : {}),
     ...extra,
   };
 }
 
-async function captureStills(browser, flags, route, url, out, manifest) {
-  const viewportNames = (flags.viewports ?? "desktop,mobile").split(",").map((v) => v.trim());
-  for (const viewportName of viewportNames) {
-    if (!VIEWPORTS[viewportName]) throw new Error(`unknown viewport: ${viewportName}`);
-    const context = await browser.newContext(contextOptions(flags, viewportName));
-    const page = await context.newPage();
-    await page.goto(url, { waitUntil: "domcontentloaded" });
-    await settle(page);
-
-    const base = `${slugify(route)}-${viewportName}`;
-    const file = path.join(out, `${base}.png`);
-    await page.screenshot({ path: file, fullPage: true });
-    manifest.push({ route, viewport: viewportName, kind: "screenshot", file });
-    console.log(`  ${viewportName} screenshot -> ${file}`);
-
-    if (viewportName === "desktop" && flags.hover) {
-      await captureInteractionStates(page, flags.hover, route, base, out, manifest);
-    }
-    if (viewportName === "desktop" && flags.a11y) {
-      const snapshot = await page.locator("body").ariaSnapshot();
-      const a11yFile = path.join(out, `${base}-aria.yml`);
-      await writeFile(a11yFile, snapshot);
-      manifest.push({ route, viewport: viewportName, kind: "a11y", file: a11yFile });
-    }
-    await context.close();
-  }
-}
-
-async function captureInteractionStates(page, selectors, route, base, out, manifest) {
-  for (const selector of selectors.split(",").map((s) => s.trim()).filter(Boolean)) {
+async function captureInteractionStates({ page, selectors, route, base, out, entries }) {
+  for (const selector of selectors.split(",").map((value) => value.trim()).filter(Boolean)) {
     const target = page.locator(selector).first();
     if (!(await target.isVisible().catch(() => false))) {
       console.warn(`  hover target not visible, skipped: ${selector}`);
@@ -179,11 +111,46 @@ async function captureInteractionStates(page, selectors, route, base, out, manif
       await page.waitForTimeout(HOVER_TRANSITION_MS);
       const file = path.join(out, `${base}-${state}-${slugify(selector)}.png`);
       await page.screenshot({ path: file });
-      manifest.push({ route, viewport: "desktop", kind: state, selector, file });
+      entries.push({ route, viewport: "desktop", kind: state, selector, file });
       console.log(`  ${state} state (${selector}) -> ${file}`);
     }
     await page.mouse.move(0, 0);
   }
+}
+
+async function captureStills({ browser, flags, run, route, url, entries }) {
+  const viewportNames = (flags.viewports ?? "desktop,mobile").split(",").map((value) => value.trim());
+  let isSignedOut = false;
+  for (const viewportName of viewportNames) {
+    if (!VIEWPORTS[viewportName]) throw new Error(`unknown viewport: ${viewportName}`);
+    const context = await browser.newContext(
+      contextOptions({ viewportName, sessionFile: run.account.sessionFile })
+    );
+    const page = await context.newPage();
+    await page.goto(url, { waitUntil: "domcontentloaded" });
+    await settle(page);
+    if (viewportName === viewportNames[0] && run.expectsSession) {
+      isSignedOut = await looksSignedOut(page, run.login);
+    }
+
+    const base = `${slugify(route)}-${run.account.name}-${viewportName}`;
+    const file = path.join(run.out, `${base}.png`);
+    await page.screenshot({ path: file, fullPage: true });
+    entries.push({ route, account: run.account.name, viewport: viewportName, kind: "screenshot", file });
+    console.log(`  ${viewportName} screenshot -> ${file}`);
+
+    if (viewportName === "desktop" && flags.hover) {
+      await captureInteractionStates({ page, selectors: flags.hover, route, base, out: run.out, entries });
+    }
+    if (viewportName === "desktop" && flags.a11y) {
+      const snapshot = await page.locator("body").ariaSnapshot();
+      const a11yFile = path.join(run.out, `${base}-aria.yml`);
+      await writeFile(a11yFile, snapshot);
+      entries.push({ route, account: run.account.name, viewport: viewportName, kind: "a11y", file: a11yFile });
+    }
+    await context.close();
+  }
+  return isSignedOut;
 }
 
 async function runFlowSteps(page, steps, baseUrl) {
@@ -214,7 +181,7 @@ async function runFlowSteps(page, steps, baseUrl) {
       default:
         throw new Error(`unknown action type: ${step.type}`);
     }
-    await page.waitForTimeout(400);
+    await page.waitForTimeout(FLOW_STEP_PAUSE_MS);
   }
 }
 
@@ -232,73 +199,157 @@ async function smoothScrollThrough(page) {
   });
 }
 
-async function captureVideo(browser, flags, route, url, out, manifest, flowSteps) {
+async function captureVideo({ browser, flags, run, route, url, entries, flowSteps }) {
   const context = await browser.newContext(
-    contextOptions(flags, "desktop", {
-      recordVideo: { dir: out, size: VIEWPORTS.desktop },
+    contextOptions({
+      viewportName: "desktop",
+      sessionFile: run.account.sessionFile,
+      extra: { recordVideo: { dir: run.out, size: VIEWPORTS.desktop } },
     })
   );
   const page = await context.newPage();
   await page.goto(url, { waitUntil: "domcontentloaded" });
   await settle(page);
-  if (flowSteps) {
-    await runFlowSteps(page, flowSteps, flags["base-url"]);
-  } else {
-    await smoothScrollThrough(page);
-  }
+  if (flowSteps) await runFlowSteps(page, flowSteps, flags["base-url"]);
+  else await smoothScrollThrough(page);
   const recordedPath = await page.video().path();
   await context.close(); // flushes the recording
-  const file = path.join(out, `${slugify(route)}-flow.webm`);
+  const file = path.join(run.out, `${slugify(route)}-${run.account.name}-flow.webm`);
   await rename(recordedPath, file);
-  manifest.push({ route, viewport: "desktop", kind: "video", file });
+  entries.push({ route, account: run.account.name, viewport: "desktop", kind: "video", file });
   console.log(`  video -> ${file}`);
+}
+
+// A session that expired mid-run turns every later capture into a login page.
+// Refresh it once, then redo the route that caught it.
+async function captureRoute({ browser, flags, run, route, url, flowSteps }) {
+  const entries = [];
+  const isSignedOut = await captureStills({ browser, flags, run, route, url, entries });
+  if (flags.video) await captureVideo({ browser, flags, run, route, url, entries, flowSteps });
+  if (!isSignedOut || !run.canRecoverSession) return { entries, isSignedOut };
+
+  console.warn(`  ${route} rendered signed out — refreshing the ${run.account.name} session`);
+  run.canRecoverSession = false;
+  const recovery = await establishSession({
+    browser,
+    account: run.account,
+    login: run.login,
+    baseUrl: flags["base-url"],
+    probeRoute: route,
+    force: true,
+  });
+  run.loginDiagnosis = recovery;
+  if (recovery.outcome !== "ok") {
+    console.error(`  session refresh failed (${recovery.outcome}): ${recovery.remedy}`);
+    return { entries, isSignedOut: true };
+  }
+  const retryEntries = [];
+  const stillSignedOut = await captureStills({ browser, flags, run, route, url, entries: retryEntries });
+  if (flags.video) {
+    await captureVideo({ browser, flags, run, route, url, entries: retryEntries, flowSteps });
+  }
+  return { entries: retryEntries, isSignedOut: stillSignedOut };
 }
 
 const flags = parseArgs(process.argv.slice(2));
 if (flags.help || !flags["base-url"] || !flags.routes) {
   console.log(HELP);
-  process.exit(flags.help ? 0 : 2);
+  process.exit(flags.help ? 0 : USAGE_EXIT_CODE);
 }
 
-const authEnv = await loadDotEnv(path.join(".peacock", "auth", ".env"));
-const credentials = {
-  email: process.env.PEACOCK_EMAIL ?? authEnv.PEACOCK_EMAIL,
-  password: process.env.PEACOCK_PASSWORD ?? authEnv.PEACOCK_PASSWORD,
-};
+const root = process.cwd();
+const config = await readPeacockConfig(resolveConfigFile(root, flags.config));
+const accounts = await resolveAccounts({ root, config, environment: process.env });
 
+let account;
+try {
+  account = flags.account ? findAccount(accounts, flags.account) : accounts[0];
+} catch (error) {
+  console.error(error.message);
+  process.exit(USAGE_EXIT_CODE);
+}
+if (flags["storage-state"]) account.sessionFile = path.resolve(root, flags["storage-state"]);
+
+const login = resolveLoginSettings(config, {
+  url: flags["login-url"],
+  userSelector: flags["login-user-selector"],
+  passSelector: flags["login-pass-selector"],
+  submitSelector: flags["login-submit-selector"],
+});
+
+const routes = flags.routes.split(",").map((route) => route.trim()).filter(Boolean);
 const out = flags.out ?? path.join(".peacock", "captures");
 await mkdir(out, { recursive: true });
 
-const { chromium } = loadPlaywright();
-const browser = await chromium.launch();
-const manifest = [];
-const failures = [];
+let playwright;
+try {
+  playwright = loadPlaywright(root);
+} catch (error) {
+  console.error(error.message);
+  process.exit(USAGE_EXIT_CODE);
+}
 
+const browser = await playwright.chromium.launch();
+const captures = [];
+const failures = [];
 const flowSteps = flags.actions ? JSON.parse(await readFile(flags.actions, "utf8")) : null;
-if (flags["login-url"]) {
-  // A failed login must not kill the run — capture public routes and report the gap.
-  try {
-    await login(browser, flags, credentials);
-  } catch (error) {
-    failures.push({ route: "(login)", error: String(error) });
-    console.error(`  LOGIN FAILED, continuing without a session: ${error}`);
+
+const run = {
+  account,
+  login,
+  out,
+  loginDiagnosis: null,
+  expectsSession: Boolean(login.url) || existsSync(account.sessionFile),
+  canRecoverSession: false,
+};
+
+if (run.expectsSession) {
+  run.loginDiagnosis = await establishSession({
+    browser,
+    account,
+    login,
+    baseUrl: flags["base-url"],
+    probeRoute: routes[0],
+  });
+  const { outcome, reused, remedy } = run.loginDiagnosis;
+  if (outcome === "ok") {
+    console.log(`signed in as ${account.name}${reused ? " (reused session)" : ""}`);
+    run.canRecoverSession = account.missing.length === 0 && Boolean(login.url);
+  } else {
+    console.error(`login failed for ${account.name} (${outcome}): ${run.loginDiagnosis.reason}`);
+    console.error(`  ${remedy}`);
+    failures.push({ route: "(login)", account: account.name, error: outcome });
+    if (flags["require-login"]) {
+      await browser.close();
+      process.exit(LOGIN_FAILED_EXIT_CODE);
+    }
   }
 }
 
-for (const route of flags.routes.split(",").map((r) => r.trim()).filter(Boolean)) {
+for (const route of routes) {
   const url = new URL(route, flags["base-url"]).href;
   console.log(`capturing ${url}`);
   try {
-    await captureStills(browser, flags, route, url, out, manifest);
-    if (flags.video) await captureVideo(browser, flags, route, url, out, manifest, flowSteps);
+    const result = await captureRoute({ browser, flags, run, route, url, flowSteps });
+    captures.push(...result.entries);
+    if (result.isSignedOut) {
+      failures.push({ route, account: account.name, error: "rendered signed out" });
+    }
   } catch (error) {
-    failures.push({ route, error: String(error) });
+    failures.push({ route, account: account.name, error: String(error) });
     console.error(`  FAILED ${route}: ${error}`);
   }
 }
 
 await browser.close();
 const manifestFile = path.join(out, "manifest.json");
-await writeFile(manifestFile, JSON.stringify({ captures: manifest, failures }, null, 2));
-console.log(`\n${manifest.length} artifacts, ${failures.length} failed routes -> ${manifestFile}`);
+await writeFile(
+  manifestFile,
+  JSON.stringify(
+    { account: describeAccount(account), login: run.loginDiagnosis, captures, failures },
+    null,
+    2
+  )
+);
+console.log(`\n${captures.length} artifacts, ${failures.length} failed routes -> ${manifestFile}`);
 process.exit(failures.length > 0 ? 1 : 0);

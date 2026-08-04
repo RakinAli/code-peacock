@@ -110,7 +110,17 @@ the gap in the report.
     "skip": []
   },
   "routes": { "include": [], "exclude": [] },       // added to / removed from detected routes
-  "login": { "url": "/login", "userSelector": "", "passSelector": "", "submitSelector": "" },
+  "login": {
+    "url": "/login",
+    "userSelector": "", "passSelector": "", "submitSelector": "",
+    "successSelector": "",        // proof a login worked   (optional)
+    "signedOutSelector": "",      // proof a session died   (optional)
+    "probeRoute": "/dashboard",   // protected route used to test a saved session
+    "accounts": [                 // omit entirely for one account named after the project
+      { "name": "clinic-admin", "label": "Clinic admin", "routes": ["/admin/**", "/organization"] },
+      { "name": "clinic-vet",   "label": "Veterinarian" }   // no routes = the fallback account
+    ]
+  },
   "pr": {
     "maxCiFixAttempts": 5,
     "reviewers": [],               // requested on PR creation
@@ -217,33 +227,93 @@ Only if Phase 1 classified the diff as touching UI. Otherwise mark skipped and m
    follow them up to page/route files. Build the list of affected URLs. Always include
    any page whose file changed directly. Apply config include/exclude.
 
-### Credentials (the only place you may ask — interactive runs only)
+### Accounts & credentials (the only place you may ask — interactive runs only)
 
-If an affected route redirects to a login page:
+A project rarely has one kind of user. Peacock resolves credentials per **named account**,
+so an admin-only page is captured as the admin and a member page as the member. With no
+`login.accounts` in the config there is exactly one account, named after the project —
+`PEACOCK_<PROJECT>_EMAIL` / `PEACOCK_<PROJECT>_PASSWORD`.
 
-- First try `.peacock/auth/storage-state.json` (saved session from a previous run).
-- Then try env vars `PEACOCK_EMAIL` / `PEACOCK_PASSWORD` or a `.peacock/auth/.env` file.
-- Interactive runs: if neither exists, ask ONCE for credentials (or a test account),
-  explaining they will be stored only in `.peacock/auth/.env` (gitignored, local only).
-  Headless runs, or no answer: continue — capture all public routes and list the
-  auth-blocked routes in the report under "Not captured — needs login".
-- Log in via the capture script's login flow once, then reuse the saved storage state.
-  Never write credentials anywhere except `.peacock/auth/`, and never commit them.
+Start by asking the auth helper what this run needs. It reads config and environment only,
+so it costs nothing and works before Playwright exists:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/peacock-auth.mjs" status --routes /admin/users,/dashboard --json
+```
+
+Per account it reports the two variable names, whether credentials resolved and from where,
+whether a saved session exists, and which account owns each affected route. Credentials are
+read from the environment first, then `.peacock/auth/.env`.
+
+For every account listed in `missingAccounts`:
+
+- **Interactive runs:** ask ONCE, naming the account's label and what it unlocks — "peacock
+  needs the *Clinic admin* test account to capture /admin/users; it is stored only in
+  `.peacock/auth/.env` (gitignored, chmod 600) — use a test account, not a real one." Ask
+  for **every** missing account in a single message, never one message per account. Store
+  each answer without echoing it back:
+
+  ```bash
+  printf '%s\n' "<password>" | node "${CLAUDE_PLUGIN_ROOT}/scripts/peacock-auth.mjs" \
+    set --account clinic-admin --email <email>
+  ```
+
+- **Headless runs, or no answer:** never block. Capture what is reachable without a session
+  and list the rest in the report under "Not captured — needs login", **naming the account
+  and the two variables** a human would have to set.
+
+Never write credentials anywhere except `.peacock/auth/`, never print a password back into
+the transcript or a log, and never commit either.
+
+### Sign in — and diagnose it when it fails
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/peacock-auth.mjs" login \
+  --account clinic-admin --base-url http://localhost:3000
+```
+
+It reuses the account's saved session when that session still works, logs in when it does
+not, and then **verifies the result** rather than assuming a submitted form succeeded. Exit
+0 = signed in, 3 = login failed, 4 = credentials missing. The JSON it prints carries
+`outcome`, `reason` (the app's own error text) and `remedy`. Act on the outcome — never
+rerun the identical command hoping for a different answer:
+
+| outcome               | what happened                | what you do                                                                                                                          |
+| --------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| `ok`                  | session saved                | capture                                                                                                                              |
+| `credentials-missing` | nothing to try               | ask (interactive) or record the gap (headless)                                                                                       |
+| `invalid-credentials` | the app rejected them        | **stop and ask that account's owner again**, quoting `reason`. Never retry the same password, never guess a variant.                  |
+| `blocked`             | MFA, captcha, or lockout     | ask for a test account without a second factor, or for an exported session at the account's `sessionFile`. Never try to defeat the gate. |
+| `form-not-found`      | selectors matched nothing    | set `login.userSelector` / `passSelector` / `submitSelector` in `peacock.config.json`, then retry once                                |
+| `unreachable`         | the login page never loaded  | fix the dev server or base URL, then retry once                                                                                      |
+| `unknown`             | submitted, still signed out  | read `.peacock/auth/<account>-login-failure.png`, then set `login.successSelector` or report the gap                                  |
+
+Every failure leaves a screenshot at `.peacock/auth/<account>-login-failure.png` and a
+record in `.peacock/auth/status.json`. Both stay out of CI artifacts; read them locally.
+A failed login is a **reported** gap, never a silent one.
 
 ### Capture
 
-Use the bundled script for all captures:
+Use the bundled script for all captures. One run captures as ONE account, so run it once
+per account using the route grouping `peacock-auth.mjs status --routes` gave you, and keep
+each account's artifacts in its own directory:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/ui-capture.mjs" \
   --base-url http://localhost:3000 \
-  --routes /dashboard,/settings \
-  --out .peacock/captures \
+  --routes /admin/users,/organization \
+  --account clinic-admin \
+  --out .peacock/captures/clinic-admin \
   --viewports desktop,mobile \
   --video \
-  --hover "button.primary, .card a" \
-  --storage-state .peacock/auth/storage-state.json
+  --hover "button.primary, .card a"
 ```
+
+It signs the account in (or reuses its session) before capturing, and if a session dies
+mid-run it refreshes it once and redoes the route that caught it. Any route that still
+renders signed out is recorded in `manifest.json` under `failures` as
+`"rendered signed out"` — those are gaps for the report, never passed off as captures.
+Add `--require-login` when a signed-out capture would be worthless (exit 3 instead).
 
 It writes screenshots, webm videos, and a `manifest.json` describing every file. Capture
 for every affected route: full-page desktop (1440×900) and mobile (390×844) screenshots,
@@ -307,10 +377,12 @@ Produce a single self-contained HTML report:
 1. Author `.peacock/reports/report-<branch>-<yyyy-mm-dd>.html` with these sections:
    **Verdict** (ship / fix-then-ship / rethink, one paragraph) · **Intent** · **Code
    review findings** (table, severity-sorted) · **Clean-code fixes applied** · **Tests**
-   (added, results) · **UI gallery** (per route: desktop/mobile side by side,
-   before/after if captured, hover states, embedded `<video>` for flows) · **UX
-   findings** (each with screenshot, cited law/convention, suggestion) · **Product owner
-   notes** · **Not covered** (auth-blocked routes, skipped phases — never hide gaps).
+   (added, results) · **UI gallery** (grouped by account when there is more than one, then
+   per route: desktop/mobile side by side, before/after if captured, hover states, embedded
+   `<video>` for flows) · **UX findings** (each with screenshot, cited law/convention,
+   suggestion) · **Product owner notes** · **Not covered** (skipped phases, plus every
+   auth-blocked route with the account it needed and the two variables that would unlock
+   it — never hide gaps).
    Reference images/videos by relative path while authoring.
    Build the test/check table from `.peacock/evidence/checks.json`; link each row to its
    log. Never replace a missing manifest with an unsupported "all checks pass" claim.

@@ -111,5 +111,5 @@ jobs:
             .peacock/captures/
             .peacock/evidence/
             !.peacock/**/auth/**
-            !.peacock/**/storage-state.json
+            !.peacock/**/*storage-state.json
           if-no-files-found: ignore

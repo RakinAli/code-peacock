@@ -36,9 +36,10 @@ autopilot) can make peacock merge on its own. See [Never merges](#peacock-never-
    down what you were actually trying to do — then judges everything against that.
 3. **Reviews like a senior dev.** Adversarial pass for logic errors, edge cases,
    security, races. Blockers get fixed, not just listed.
-4. **Lints ruthlessly.** 40+ clean-code rules stricter than any ESLint config: no dead
+4. **Lints ruthlessly.** 80+ clean-code rules stricter than any ESLint config: no dead
    code, no boolean traps (`render(data, true)` — banned), no weird booleans, no magic
-   numbers, no speculative abstraction. Violations get fixed.
+   numbers, no speculative abstraction, no floating promises, no secrets in logs, no
+   layer reaching around the one below it. Violations get fixed.
 5. **Proves the code path.** Generates tests that pin down the *intent* (happy path,
    edge cases, failure paths), including behavior-level Playwright/Cypress tests for
    changed UI flows. Then a deterministic runner discovers and executes the project's
@@ -48,7 +49,8 @@ autopilot) can make peacock merge on its own. See [Never merges](#peacock-never-
 6. **Sees your UI so you don't have to.** Spins up your dev server, drives headless
    Chromium via Playwright, and captures every affected route: desktop + mobile
    full-page screenshots, hover/focus states, scroll-through and flow **videos**,
-   before/after against the base branch when feasible.
+   before/after against the base branch when feasible — signed in as whichever named
+   test account each route needs, and honest about the ones it couldn't reach.
 7. **Audits UX like it means it.** Every capture is reviewed against the
    [Laws of UX](https://lawsofux.com) and a frontend-conventions checklist: does your
    new button match the other 12 buttons in the app? Missing loading/empty/error
@@ -163,7 +165,14 @@ Commit a `peacock.config.json` at your repo root:
     "skip": []                                                // e.g. ["build"]
   },
   "routes": { "include": ["/pricing"], "exclude": ["/admin"] },
-  "login": { "url": "/login" },
+  "login": {
+    "url": "/login",
+    "probeRoute": "/dashboard",                                  // used to test a saved session
+    "accounts": [                                                // omit for a single account
+      { "name": "clinic-admin", "label": "Clinic admin", "routes": ["/admin/**"] },
+      { "name": "clinic-vet", "label": "Veterinarian" }
+    ]
+  },
   "pr": {
     "maxCiFixAttempts": 5,
     "reviewers": [],                                             // requested on PR creation
@@ -204,21 +213,74 @@ printing encoded or transformed secrets, which cannot be recognized generically.
 Repository-specific commands belong in `peacock.config.json`; Peacock never silently
 turns a missing test framework into a passing result.
 
-## Auth for protected pages
+## Auth for protected pages — one account, or several
 
 Peacock keeps everything it generates in `.peacock/` inside your repo (auto-gitignored).
-To let it see logged-in pages, either export `PEACOCK_EMAIL` / `PEACOCK_PASSWORD`, or:
 
-```
-# .peacock/auth/.env   (local only, never committed)
-PEACOCK_EMAIL=test@example.com
-PEACOCK_PASSWORD=hunter2
+Most apps have more than one kind of user, so credentials are **per named account**. With
+no configuration there is one account, named after your project:
+
+```bash
+# in a repo whose package name is "vetnio"
+export PEACOCK_VETNIO_EMAIL=test@example.com
+export PEACOCK_VETNIO_PASSWORD=...
 ```
 
-It logs in once, saves the browser session to `.peacock/auth/storage-state.json`, and
-reuses it on later runs. Use a test account, not your real one. In interactive runs it
-asks once if credentials are missing; headless runs never block — they capture public
-pages and report what needs login.
+Declare more when one login can't reach everything:
+
+```jsonc
+"login": {
+  "url": "/login",
+  "probeRoute": "/dashboard",
+  "accounts": [
+    { "name": "clinic-admin", "label": "Clinic admin", "routes": ["/admin/**", "/organization"] },
+    { "name": "clinic-vet",   "label": "Veterinarian" }        // no routes = covers the rest
+  ]
+}
+```
+
+Each account reads `PEACOCK_<ACCOUNT>_EMAIL` / `PEACOCK_<ACCOUNT>_PASSWORD` from the
+environment first, then from `.peacock/auth/.env`. Affected routes are matched to accounts
+by those patterns, and each account is captured in its own pass.
+
+Ask peacock what it needs, and hand it what's missing:
+
+```bash
+node ~/code-peacock/scripts/peacock-auth.mjs status --routes /admin/users,/dashboard
+node ~/code-peacock/scripts/peacock-auth.mjs set --account clinic-admin   # prompts; password never echoes
+```
+
+`set` writes `.peacock/auth/.env` with mode 600 and adds `.peacock/` to `.gitignore` if it
+isn't already there. During a run peacock asks you for every missing account in one message,
+by label ("the Clinic admin test account, to capture /admin/users"). Headless runs never
+block: they capture what's public and report the rest, naming the variables a human would
+have to set. Use test accounts, never your own.
+
+### When a login fails, it says so
+
+Filling a form and clicking submit always "succeeds" — which is how a run ends up with
+forty screenshots of a login page. Peacock verifies the session instead:
+
+```bash
+node ~/code-peacock/scripts/peacock-auth.mjs login --account clinic-admin --base-url http://localhost:3000
+```
+
+```json
+{
+  "account": "clinic-admin",
+  "outcome": "invalid-credentials",
+  "reason": "Invalid email or password",
+  "remedy": "The app rejected the Clinic admin credentials. Ask for the correct password and rerun; do not retry the same value."
+}
+```
+
+The outcomes are `ok`, `credentials-missing`, `invalid-credentials`, `blocked` (MFA,
+captcha, lockout), `form-not-found` (your login markup moved), `unreachable`, and
+`unknown` — each with its own remedy, exit code, and a screenshot of the failed attempt at
+`.peacock/auth/<account>-login-failure.png`. Give it a wrong password and an interactive
+run stops and asks you for the right one; a headless run records the gap in the report.
+Sessions are cached per account and re-checked before each run — an expired one is
+refreshed automatically, including mid-run.
 
 ## Requirements
 
@@ -241,6 +303,10 @@ skills/peacock/        THE pipeline (SKILL.md, single source of truth) + ruleboo
   agents/openai.yaml            Codex skill interface metadata
 scripts/strut.sh                the mascot
 scripts/ui-capture.mjs          Playwright captures (screenshots, states, videos, a11y)
+scripts/peacock-auth.mjs        named test accounts: status, set, login, verify
+scripts/lib/peacock-accounts.mjs  account resolution, credential storage, route mapping
+scripts/lib/peacock-login.mjs     browser login, session checks, failure diagnosis
+scripts/lib/peacock-config.mjs    peacock.config.json reader
 scripts/project-checks.mjs      cross-stack check discovery + durable evidence logs
 scripts/inline-assets.mjs       makes the HTML report self-contained
 scripts/pr-threads.mjs          list/reply/resolve PR review threads (GraphQL via gh)
@@ -250,6 +316,7 @@ scripts/install-codex.sh        renders the pipeline as a Codex skill + /peacock
 templates/peacock.yml           GitHub Actions workflow — per-PR headless runs
 templates/peacock-scheduled.yml GitHub Actions workflow — scheduled autopilot
 tests/project-checks.sh         contract tests for discovery, failures, and evidence
+tests/auth.sh                   contract tests for accounts, routing, and credential storage
 ```
 
 ## License
