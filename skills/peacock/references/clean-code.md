@@ -120,3 +120,104 @@ Severity: every violation is fix-now unless marked (report-only).
 - **PCK-S1** Similar things look similar: parallel branches structured the same way,
   sibling files organized the same way, matching function pairs named as pairs
   (`open`/`close`, not `open`/`shutDown`).
+
+## 13. Modules & files
+
+- **PCK-MOD1** One file, one responsibility, named after it. Soft cap ~400 lines; past
+  that, split by responsibility (not by line count) — sub-components to sibling files,
+  hooks/helpers to their own module. Applies to files this branch creates or substantially
+  rewrites; a long file you merely opened is not this branch's problem. (report-only on
+  pre-existing files)
+- **PCK-MOD2** A module's exports are its API. Export what callers actually import today;
+  everything else stays private. An export with no consumer is dead code (PCK-D1).
+- **PCK-MOD3** Imports point one way. Lower layers never import higher ones — a data
+  module never imports a service, a service never imports a controller/route/component.
+  An import cycle is a design error, not a bundler warning.
+- **PCK-MOD4** No reaching around a layer: route handlers don't run queries inline, data
+  modules don't decide permissions, UI components don't hand-roll transport. Each layer
+  talks to the one below it.
+- **PCK-MOD5** No barrel file whose only job is shortening an import path. It hides the
+  dependency graph and drags unrelated modules into every bundle. (report-only)
+
+## 14. Boundaries & I/O
+
+- **PCK-IO1** Validate at the boundary, once — then everything inside is typed and
+  trusted. Re-validating the same value three layers deep means the boundary isn't
+  trusted; fix the boundary (schema rules live in PCK-T4).
+- **PCK-IO2** Never call your own service over HTTP from inside itself. `fetch("/api/x")`
+  server-side is a function call with extra latency, extra auth, and extra failure modes.
+- **PCK-IO3** Every outbound call has a timeout and a defined failure path. "It normally
+  responds fast" is not a timeout.
+- **PCK-IO4** Every query is parameterized — SQL, shell, HTML, template. String-concatenated
+  input is a defect, never a style preference.
+- **PCK-IO5** Reads don't write and writes aren't disguised as reads. A `get*` that mutates,
+  or a mutation exposed as a query, is a correctness bug waiting for a retry (see PCK-F5).
+- **PCK-IO6** Retries are bounded, backed off, and only on idempotent operations. An
+  unbounded retry loop is an outage amplifier.
+
+## 15. Async & concurrency
+
+- **PCK-AS1** No floating promises. Every async call is awaited, returned, or handed to
+  something that reports its failure. Fire-and-forget is a decision that needs a comment.
+- **PCK-AS2** Independent work that runs sequentially in a loop should run together — with
+  a bound. An unbounded `Promise.all` over user-sized input is a load test aimed at your
+  own dependencies.
+- **PCK-AS3** Cleanup is part of the happy path: listeners removed, timers cleared, object
+  URLs revoked, streams closed, aborts propagated. Every subscription has a matching
+  teardown in the same file.
+- **PCK-AS4** Nothing runs on a timer the code can't stop, and nothing schedules work that
+  outlives the thing that asked for it.
+- **PCK-AS5** No sleep-based synchronization. Waiting 500ms and hoping is not waiting for a
+  condition — wait for the condition.
+- **PCK-AS6** Shared mutable state crossing an `await` needs a stated invariant. If two
+  concurrent calls can interleave there, say why that's safe.
+
+## 16. Secrets & sensitive data
+
+- **PCK-SEC1** No secret in source, in a committed config, in a log line, in an error
+  message, or in a test fixture. Not even a "temporary" one — git remembers.
+- **PCK-SEC2** Never echo back a credential a human just typed, and never write one outside
+  the one place the project keeps them. Prompt, store, use — don't reprint.
+- **PCK-SEC3** Least privilege by default. Never widen an authorization check, broaden a
+  token scope, or relax a permission as a side effect of an unrelated change.
+- **PCK-SEC4** Log identifiers, not payloads: a user id, not the user record; a request id,
+  not the request body. Anything that could carry personal data stays out of logs.
+- **PCK-SEC5** A file that holds credentials is created private (0600) and ignored by
+  version control in the same change that creates it — never in a follow-up.
+
+## 17. Observability
+
+- **PCK-OB1** One logger, structured, with context (`logger.error(message, { runId, userId })`).
+  Bare prints are for debugging and don't survive review (PCK-D4).
+- **PCK-OB2** Log where you have the context, once. The same failure logged at four layers
+  is four times the noise and none of the signal.
+- **PCK-OB3** An error you handle must still be *visible* — a returned error, a metric, a
+  user-facing message. Handling is not hiding (PCK-E1).
+- **PCK-OB4** Messages a human reads say what happened and what to do next; codes a machine
+  reads stay stable across releases. Don't swap one for the other.
+
+## 18. User-facing text
+
+- **PCK-X1** No user-facing string hard-coded in a component when the project has a
+  translation layer. Add the key to the source-of-truth locale first, then the rest.
+- **PCK-X2** Never assemble a sentence by concatenating fragments — word order isn't
+  universal. Interpolate into one whole message.
+- **PCK-X3** Dates, numbers, currency, and pluralization go through the locale-aware helper
+  the project already uses. Hand-rolled formatting is a bug in someone else's locale.
+- **PCK-X4** Copy is written for the person reading it: no internal jargon, no raw error
+  codes, no "Are you sure?" where the verb would do (see ui-conventions.md).
+
+## 19. Tests
+
+- **PCK-TS1** A bug fix ships with a test that fails without the fix. If the test passes
+  before your change, it doesn't test your change.
+- **PCK-TS2** Tests are named after behavior ("rejects an expired token"), never after the
+  method under test ("test handleSubmit 2").
+- **PCK-TS3** Every test asserts something that would break if the feature were deleted.
+  A test that only proves "nothing threw" is a smoke test — label it as one.
+- **PCK-TS4** Tests wait for conditions, never for durations (PCK-AS5). Sleeps are how a
+  suite becomes flaky.
+- **PCK-TS5** Never weaken an assertion, add a retry, or skip a test to make a suite green.
+  Fix the code or report the failure honestly.
+- **PCK-TS6** Fixtures say what matters: name the one field the test is about, default the
+  rest. A 40-line literal hides which value drives the assertion.
