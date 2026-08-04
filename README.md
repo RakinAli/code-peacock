@@ -46,11 +46,15 @@ autopilot) can make peacock merge on its own. See [Never merges](#peacock-never-
    lint, formatting, type, unit, E2E, and build commands across JavaScript/TypeScript,
    Python, Go, Rust, Ruby, .NET, JVM (Maven/Gradle), Swift, and Elixir — plus executable
    `tests/*.sh` contracts. Every command gets a complete evidence log.
-6. **Sees your UI so you don't have to.** Spins up your dev server, drives headless
-   Chromium via Playwright, and captures every affected route: desktop + mobile
-   full-page screenshots, hover/focus states, scroll-through and flow **videos**,
-   before/after against the base branch when feasible — signed in as whichever named
-   test account each route needs, and honest about the ones it couldn't reach.
+6. **Sees your UI so you don't have to.** Works out which routes the diff actually
+   affects by walking the reverse-dependency closure of the changed files — not by
+   grepping — then spins up your dev server, drives headless Chromium via Playwright,
+   and captures each one: desktop + mobile full-page screenshots, hover/focus states,
+   scroll-through and flow **videos**, pixel-diffed against the base branch when feasible — signed in as whichever named
+   test account each route needs, and honest about the ones it couldn't reach. Console
+   errors, uncaught exceptions and failed requests are recorded per route, accessibility
+   violations come from axe-core rather than from squinting at a PNG, and each flow ships
+   a replayable Playwright trace.
 7. **Audits UX like it means it.** Every capture is reviewed against the
    [Laws of UX](https://lawsofux.com) and a frontend-conventions checklist: does your
    new button match the other 12 buttons in the app? Missing loading/empty/error
@@ -304,9 +308,12 @@ skills/peacock/        THE pipeline (SKILL.md, single source of truth) + ruleboo
 scripts/strut.sh                the mascot
 scripts/ui-capture.mjs          Playwright captures (screenshots, states, videos, a11y)
 scripts/peacock-auth.mjs        named test accounts: status, set, login, verify
+scripts/affected-routes.mjs     reverse-dependency closure of the diff -> affected URLs
+scripts/capture-diff.mjs        before/after image diffing (odiff-bin or pixelmatch)
 scripts/lib/peacock-accounts.mjs  account resolution, credential storage, route mapping
 scripts/lib/peacock-login.mjs     browser login, session checks, failure diagnosis
 scripts/lib/peacock-config.mjs    peacock.config.json reader
+scripts/lib/peacock-require.mjs   resolves optional packages from the TARGET project
 scripts/project-checks.mjs      cross-stack check discovery + durable evidence logs
 scripts/inline-assets.mjs       makes the HTML report self-contained
 scripts/pr-threads.mjs          list/reply/resolve PR review threads (GraphQL via gh)
@@ -317,6 +324,7 @@ templates/peacock.yml           GitHub Actions workflow — per-PR headless runs
 templates/peacock-scheduled.yml GitHub Actions workflow — scheduled autopilot
 tests/project-checks.sh         contract tests for discovery, failures, and evidence
 tests/auth.sh                   contract tests for accounts, routing, and credential storage
+tests/affected-routes.sh        contract tests for the dependency walk and route mapping
 ```
 
 ## License

@@ -24,6 +24,6 @@ Rules when changing this repo:
 - Dogfood `skills/peacock/references/clean-code.md` in every change here.
 - Verify before committing (`node --check` and `bash -n` only parse their first
   argument, hence the loops):
-  `bash scripts/strut.sh && for f in scripts/*.mjs scripts/lib/*.mjs; do node --check "$f"; done && for f in scripts/*.sh; do bash -n "$f"; done && bash tests/project-checks.sh && bash tests/auth.sh && claude plugin validate .`
+  `bash scripts/strut.sh && for f in scripts/*.mjs scripts/lib/*.mjs; do node --check "$f"; done && for f in scripts/*.sh; do bash -n "$f"; done && bash tests/project-checks.sh && bash tests/auth.sh && bash tests/affected-routes.sh && claude plugin validate .`
 - Commit messages and PRs follow `skills/peacock/references/pr-style.md` — no AI
   attribution anywhere.

@@ -358,8 +358,22 @@ page.
 
 **Before/after when feasible:** if the change modifies existing UI (not brand-new pages)
 and the dev server can be run from a worktree cheaply, create a temporary worktree of
-the base branch, run it on another port, and capture the same routes for a side-by-side.
-If that's too heavy for this project (slow builds, DB migrations), skip it and note why.
+the base branch, run it on another port, and capture the same routes into a second
+directory. If that's too heavy for this project (slow builds, DB migrations), skip it and
+note why.
+
+Then compare them mechanically rather than by eye:
+
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/capture-diff.mjs" \
+  --before .peacock/captures/base --after .peacock/captures/clinic-admin
+```
+
+It pairs screenshots by route and viewport, writes a diff image per changed pair, and
+reports the changed-pixel percentage (`odiff-bin` if the project has it, else
+`pixelmatch` + `pngjs`; if it has neither, install odiff-bin or record the gap). Use the
+result twice: show before/after/diff in the report, and **skip the Phase 6 review of any
+route the diff says is pixel-identical** — say in the report that you skipped them and why.
 
 Read `manifest.json` and **view every screenshot**. You are about to review them; never
 review images you haven't actually looked at.

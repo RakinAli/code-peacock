@@ -11,7 +11,7 @@
 // to a built-in import scanner so it works in a repo with neither.
 
 import { spawnSync } from "node:child_process";
-import { existsSync } from "node:fs";
+import { existsSync, realpathSync } from "node:fs";
 import { readFile, mkdir, writeFile, readdir, stat } from "node:fs/promises";
 import path from "node:path";
 
@@ -70,7 +70,14 @@ function git(root, argumentsList) {
 }
 
 function resolveBaseRef(root, requested) {
-  if (requested) return requested;
+  // A base ref that does not exist would otherwise produce an empty diff, and an
+  // empty diff reads exactly like "this branch changes no UI".
+  if (requested) {
+    if (!git(root, ["rev-parse", "--verify", `${requested}^{commit}`])) {
+      throw new Error(`base ref "${requested}" does not exist in this repository`);
+    }
+    return requested;
+  }
   const head = git(root, ["symbolic-ref", "refs/remotes/origin/HEAD"]);
   if (head) return head.replace("refs/remotes/", "");
   for (const branch of DEFAULT_BASE_BRANCHES) {
@@ -282,13 +289,17 @@ async function main() {
     console.log(HELP);
     return 0;
   }
-  const root = path.resolve(flags.root ?? process.cwd());
+  // Resolve symlinks on both sides: git reports the real path of the repository
+  // root, and on macOS a /var/... project root is really /private/var/..., so an
+  // unresolved comparison silently discards every changed file.
+  const root = realpathSync(path.resolve(flags.root ?? process.cwd()));
   const config = await readPeacockConfig(resolveConfigFile(root, flags.config));
   const baseRef = resolveBaseRef(root, flags.base);
   const changedFiles = listChangedFiles(root, baseRef);
   // git reports paths from the repository root, which is not the project root in
   // a monorepo — resolve against the former and keep only what lives under the latter.
-  const gitRoot = git(root, ["rev-parse", "--show-toplevel"]) || root;
+  const reportedGitRoot = git(root, ["rev-parse", "--show-toplevel"]);
+  const gitRoot = reportedGitRoot ? realpathSync(reportedGitRoot) : root;
   const changedSourceFiles = changedFiles
     .filter((file) => SOURCE_EXTENSIONS.includes(path.extname(file)))
     .map((file) => path.resolve(gitRoot, file))
