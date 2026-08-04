@@ -8,6 +8,8 @@ import { mkdir, readFile, readdir, rm, stat, writeFile } from "node:fs/promises"
 import path from "node:path";
 import { StringDecoder } from "node:string_decoder";
 
+import { readPeacockConfig } from "./lib/peacock-config.mjs";
+
 const HELP = `Usage: node project-checks.mjs [options]
 
 Options:
@@ -63,55 +65,8 @@ function parseArgs(argumentsList) {
   return flags;
 }
 
-function stripJsonComments(source) {
-  let result = "";
-  let isString = false;
-  let isEscaped = false;
-  let comment = null;
-  for (let index = 0; index < source.length; index++) {
-    const character = source[index];
-    const next = source[index + 1];
-    if (comment === "line") {
-      if (character === "\n") {
-        comment = null;
-        result += character;
-      }
-      continue;
-    }
-    if (comment === "block") {
-      if (character === "*" && next === "/") {
-        comment = null;
-        index++;
-      }
-      continue;
-    }
-    if (!isString && character === "/" && next === "/") {
-      comment = "line";
-      index++;
-      continue;
-    }
-    if (!isString && character === "/" && next === "*") {
-      comment = "block";
-      index++;
-      continue;
-    }
-    result += character;
-    if (character === '"' && !isEscaped) isString = !isString;
-    isEscaped = isString && character === "\\" && !isEscaped;
-    if (character !== "\\") isEscaped = false;
-  }
-  return result;
-}
-
-async function readText(file) {
-  if (!existsSync(file)) return "";
-  return readFile(file, "utf8");
-}
-
 async function loadConfig(file) {
-  const source = await readText(file);
-  if (!source) return {};
-  return validateConfig(JSON.parse(stripJsonComments(source)));
+  return validateConfig(await readPeacockConfig(file));
 }
 
 function validateConfig(config) {

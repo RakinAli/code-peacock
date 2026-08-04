@@ -78,5 +78,5 @@ jobs:
             ${{ runner.temp }}/peacock/repo/.peacock/captures/
             ${{ runner.temp }}/peacock/repo/.peacock/evidence/
             !${{ runner.temp }}/peacock/repo/.peacock/**/auth/**
-            !${{ runner.temp }}/peacock/repo/.peacock/**/storage-state.json
+            !${{ runner.temp }}/peacock/repo/.peacock/**/*storage-state.json
           if-no-files-found: ignore
