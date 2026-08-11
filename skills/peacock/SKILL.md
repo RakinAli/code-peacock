@@ -117,8 +117,8 @@ the gap in the report.
     "signedOutSelector": "",      // proof a session died   (optional)
     "probeRoute": "/dashboard",   // protected route used to test a saved session
     "accounts": [                 // omit entirely for one account named after the project
-      { "name": "clinic-admin", "label": "Clinic admin", "routes": ["/admin/**", "/organization"] },
-      { "name": "clinic-vet",   "label": "Veterinarian" }   // no routes = the fallback account
+      { "name": "org-admin", "label": "Org admin", "routes": ["/admin/**", "/organization"] },
+      { "name": "member",   "label": "Member" }   // no routes = the fallback account
     ]
   },
   "pr": {
@@ -296,14 +296,14 @@ read from the environment first, then `.peacock/auth/.env`.
 For every account listed in `missingAccounts`:
 
 - **Interactive runs:** ask ONCE, naming the account's label and what it unlocks — "peacock
-  needs the *Clinic admin* test account to capture /admin/users; it is stored only in
+  needs the *Org admin* test account to capture /admin/users; it is stored only in
   `.peacock/auth/.env` (gitignored, chmod 600) — use a test account, not a real one." Ask
   for **every** missing account in a single message, never one message per account. Store
   each answer without echoing it back:
 
   ```bash
   printf '%s\n' "<password>" | node "${CLAUDE_PLUGIN_ROOT}/scripts/peacock-auth.mjs" \
-    set --account clinic-admin --email <email>
+    set --account org-admin --email <email>
   ```
 
 - **Headless runs, or no answer:** never block. Capture what is reachable without a session
@@ -317,7 +317,7 @@ the transcript or a log, and never commit either.
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/peacock-auth.mjs" login \
-  --account clinic-admin --base-url http://localhost:3000
+  --account org-admin --base-url http://localhost:3000
 ```
 
 It reuses the account's saved session when that session still works, logs in when it does
@@ -350,8 +350,8 @@ each account's artifacts in its own directory:
 node "${CLAUDE_PLUGIN_ROOT}/scripts/ui-capture.mjs" \
   --base-url http://localhost:3000 \
   --routes /admin/users,/organization \
-  --account clinic-admin \
-  --out .peacock/captures/clinic-admin \
+  --account org-admin \
+  --out .peacock/captures/org-admin \
   --viewports desktop,mobile \
   --video --trace --a11y --coverage \
   --hover "button.primary, .card a"
@@ -387,7 +387,7 @@ Then compare them mechanically rather than by eye:
 
 ```bash
 node "${CLAUDE_PLUGIN_ROOT}/scripts/capture-diff.mjs" \
-  --before .peacock/captures/base --after .peacock/captures/clinic-admin
+  --before .peacock/captures/base --after .peacock/captures/org-admin
 ```
 
 It pairs screenshots by route and viewport, writes a diff image per changed pair, and

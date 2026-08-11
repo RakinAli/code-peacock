@@ -10,15 +10,15 @@ trap 'rm -rf "$TEST_ROOT"' EXIT
 SOLO="$TEST_ROOT/solo"
 mkdir -p "$SOLO"
 git -C "$SOLO" init -q .
-printf '{ "name": "@acme/vetnio-web" }' > "$SOLO/package.json"
+printf '{ "name": "@acme/storefront" }' > "$SOLO/package.json"
 
 node "$AUTH" status --root "$SOLO" --json > "$SOLO/unset.json"
 node -e '
   const report = require(process.argv[1]);
   const [account, ...extra] = report.accounts;
   if (extra.length) throw new Error("expected exactly one implicit account");
-  if (account.name !== "vetnio-web") throw new Error(`expected vetnio-web, got ${account.name}`);
-  if (account.emailVariable !== "PEACOCK_VETNIO_WEB_EMAIL") throw new Error(account.emailVariable);
+  if (account.name !== "storefront") throw new Error(`expected storefront, got ${account.name}`);
+  if (account.emailVariable !== "PEACOCK_STOREFRONT_EMAIL") throw new Error(account.emailVariable);
   if (account.hasCredentials) throw new Error("unset credentials reported as present");
   if (report.missingAccounts.length !== 1) throw new Error("missing account not reported");
 ' "$SOLO/unset.json"
@@ -32,11 +32,11 @@ node -e '
 ' "$SOLO/legacy.json"
 
 PEACOCK_EMAIL=legacy@example.test PEACOCK_PASSWORD=legacy-secret \
-  PEACOCK_VETNIO_WEB_EMAIL=scoped@example.test PEACOCK_VETNIO_WEB_PASSWORD=scoped-secret \
+  PEACOCK_STOREFRONT_EMAIL=scoped@example.test PEACOCK_STOREFRONT_PASSWORD=scoped-secret \
   node "$AUTH" status --root "$SOLO" --json > "$SOLO/scoped.json"
 node -e '
   const [account] = require(process.argv[1]).accounts;
-  if (account.credentialSource !== "PEACOCK_VETNIO_WEB_EMAIL") throw new Error(account.credentialSource);
+  if (account.credentialSource !== "PEACOCK_STOREFRONT_EMAIL") throw new Error(account.credentialSource);
   if (account.email !== "scoped@example.test") throw new Error("scoped variables must win over legacy ones");
 ' "$SOLO/scoped.json"
 
@@ -49,15 +49,15 @@ fi
 TEAM="$TEST_ROOT/team"
 mkdir -p "$TEAM"
 git -C "$TEAM" init -q .
-printf '{ "name": "clinic" }' > "$TEAM/package.json"
+printf '{ "name": "acme" }' > "$TEAM/package.json"
 cat > "$TEAM/peacock.config.json" <<'JSON'
 {
   // two kinds of user
   "login": {
     "url": "/login",
     "accounts": [
-      { "name": "clinic-admin", "label": "Clinic admin", "routes": ["/admin/**", "/organization"] },
-      { "name": "clinic-vet", "label": "Veterinarian" }
+      { "name": "org-admin", "label": "Org admin", "routes": ["/admin/**", "/organization"] },
+      { "name": "member", "label": "Member" }
     ]
   }
 }
@@ -68,10 +68,10 @@ PEACOCK_EMAIL=legacy@example.test PEACOCK_PASSWORD=legacy-secret \
 node -e '
   const report = require(process.argv[1]);
   const expected = {
-    "/admin": "clinic-admin",
-    "/admin/users": "clinic-admin",
-    "/organization": "clinic-admin",
-    "/dashboard": "clinic-vet",
+    "/admin": "org-admin",
+    "/admin/users": "org-admin",
+    "/organization": "org-admin",
+    "/dashboard": "member",
   };
   for (const [route, owner] of Object.entries(expected)) {
     if (report.routeAccounts[route] !== owner) {
@@ -84,7 +84,7 @@ node -e '
 ' "$TEAM/routes.json"
 
 # --- storing credentials: piped, private, gitignored, never echoed ------------
-printf 'hunter2\n' | node "$AUTH" set --root "$TEAM" --account clinic-vet --email vet@example.test > "$TEAM/set.log"
+printf 'hunter2\n' | node "$AUTH" set --root "$TEAM" --account member --email member@example.test > "$TEAM/set.log"
 if grep -q "hunter2" "$TEAM/set.log"; then
   echo "stored password was echoed back" >&2
   exit 1
@@ -98,21 +98,21 @@ grep -q "^\.peacock/$" "$TEAM/.gitignore"
 
 node "$AUTH" status --root "$TEAM" --json > "$TEAM/stored.json"
 node -e '
-  const stored = require(process.argv[1]).accounts.find((account) => account.name === "clinic-vet");
+  const stored = require(process.argv[1]).accounts.find((account) => account.name === "member");
   if (!stored.hasCredentials) throw new Error("stored credentials were not read back");
-  if (stored.email !== "vet@example.test") throw new Error(stored.email);
+  if (stored.email !== "member@example.test") throw new Error(stored.email);
 ' "$TEAM/stored.json"
 
 # --- a login with nothing to try answers without needing a browser ------------
 set +e
-node "$AUTH" login --root "$TEAM" --account clinic-admin --base-url http://localhost:1 > "$TEAM/login.json" 2>&1
+node "$AUTH" login --root "$TEAM" --account org-admin --base-url http://localhost:1 > "$TEAM/login.json" 2>&1
 LOGIN_STATUS=$?
 set -e
 test "$LOGIN_STATUS" -eq 4 || { echo "expected exit 4 for missing credentials, got $LOGIN_STATUS" >&2; exit 1; }
 node -e '
   const diagnosis = require(process.argv[1]);
   if (diagnosis.outcome !== "credentials-missing") throw new Error(diagnosis.outcome);
-  if (!diagnosis.remedy.includes("PEACOCK_CLINIC_ADMIN_PASSWORD")) throw new Error("remedy must name the variable to set");
+  if (!diagnosis.remedy.includes("PEACOCK_ORG_ADMIN_PASSWORD")) throw new Error("remedy must name the variable to set");
 ' "$TEAM/login.json"
 
 # --- usage errors stay usage errors -------------------------------------------

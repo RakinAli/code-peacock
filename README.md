@@ -176,8 +176,8 @@ Commit a `peacock.config.json` at your repo root:
     "url": "/login",
     "probeRoute": "/dashboard",                                  // used to test a saved session
     "accounts": [                                                // omit for a single account
-      { "name": "clinic-admin", "label": "Clinic admin", "routes": ["/admin/**"] },
-      { "name": "clinic-vet", "label": "Veterinarian" }
+      { "name": "org-admin", "label": "Org admin", "routes": ["/admin/**"] },
+      { "name": "member", "label": "Member" }
     ]
   },
   "pr": {
@@ -243,9 +243,9 @@ Most apps have more than one kind of user, so credentials are **per named accoun
 no configuration there is one account, named after your project:
 
 ```bash
-# in a repo whose package name is "vetnio"
-export PEACOCK_VETNIO_EMAIL=test@example.com
-export PEACOCK_VETNIO_PASSWORD=...
+# in a repo whose package name is "acme-web"
+export PEACOCK_ACME_WEB_EMAIL=test@example.com
+export PEACOCK_ACME_WEB_PASSWORD=...
 ```
 
 Declare more when one login can't reach everything:
@@ -255,8 +255,8 @@ Declare more when one login can't reach everything:
   "url": "/login",
   "probeRoute": "/dashboard",
   "accounts": [
-    { "name": "clinic-admin", "label": "Clinic admin", "routes": ["/admin/**", "/organization"] },
-    { "name": "clinic-vet",   "label": "Veterinarian" }        // no routes = covers the rest
+    { "name": "org-admin", "label": "Org admin", "routes": ["/admin/**", "/organization"] },
+    { "name": "member",   "label": "Member" }        // no routes = covers the rest
   ]
 }
 ```
@@ -269,12 +269,12 @@ Ask peacock what it needs, and hand it what's missing:
 
 ```bash
 node ~/code-peacock/scripts/peacock-auth.mjs status --routes /admin/users,/dashboard
-node ~/code-peacock/scripts/peacock-auth.mjs set --account clinic-admin   # prompts; password never echoes
+node ~/code-peacock/scripts/peacock-auth.mjs set --account org-admin   # prompts; password never echoes
 ```
 
 `set` writes `.peacock/auth/.env` with mode 600 and adds `.peacock/` to `.gitignore` if it
 isn't already there. During a run peacock asks you for every missing account in one message,
-by label ("the Clinic admin test account, to capture /admin/users"). Headless runs never
+by label ("the Org admin test account, to capture /admin/users"). Headless runs never
 block: they capture what's public and report the rest, naming the variables a human would
 have to set. Use test accounts, never your own.
 
@@ -284,15 +284,15 @@ Filling a form and clicking submit always "succeeds" — which is how a run ends
 forty screenshots of a login page. Peacock verifies the session instead:
 
 ```bash
-node ~/code-peacock/scripts/peacock-auth.mjs login --account clinic-admin --base-url http://localhost:3000
+node ~/code-peacock/scripts/peacock-auth.mjs login --account org-admin --base-url http://localhost:3000
 ```
 
 ```json
 {
-  "account": "clinic-admin",
+  "account": "org-admin",
   "outcome": "invalid-credentials",
   "reason": "Invalid email or password",
-  "remedy": "The app rejected the Clinic admin credentials. Ask for the correct password and rerun; do not retry the same value."
+  "remedy": "The app rejected the Org admin credentials. Ask for the correct password and rerun; do not retry the same value."
 }
 ```
 
